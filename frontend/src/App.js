@@ -864,7 +864,7 @@ export default function App(){
   useEffect(()=>{const t=setInterval(()=>setTime(new Date().toLocaleTimeString("en-GB")+" GMT"),1000);return()=>clearInterval(t);},[]);
 
   const post=useCallback(async(url,body)=>{
-    const r=await fetch("http://localhost:5000"+url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const r=await fetch("https://qgif-backend.onrender.com"+url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     return r.json();
   },[]);
 
