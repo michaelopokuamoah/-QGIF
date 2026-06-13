@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { MapContainer, TileLayer, Marker, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 
@@ -46,20 +46,6 @@ const SCENARIOS=[
   {key:"reforestation",label:"Reforestation",icon:"🌳",desc:"What if we restore 50,000 hectares?"},
 ];
 
-const MAP_REGIONS=[
-  {name:"Upper West Region",risk:"LOW",d:"M130,58 L285,58 L295,100 L275,162 L245,202 L205,222 L165,212 L135,192 L115,152 L115,100 Z"},
-  {name:"Upper East Region",risk:"LOW",d:"M285,58 L445,58 L455,82 L465,132 L445,182 L405,202 L365,212 L325,202 L295,182 L275,162 L295,100 Z"},
-  {name:"Northern Region",risk:"LOW",d:"M115,152 L135,192 L165,212 L205,222 L245,202 L275,162 L295,182 L325,202 L365,212 L405,202 L445,182 L465,202 L475,262 L455,322 L425,362 L385,382 L345,372 L305,362 L265,352 L225,342 L185,322 L155,292 L133,252 L118,212 Z"},
-  {name:"Brong-Ahafo",risk:"MEDIUM",d:"M133,252 L155,292 L185,322 L225,342 L265,352 L305,362 L345,372 L385,382 L425,362 L455,372 L475,412 L465,452 L435,472 L395,462 L355,452 L315,442 L275,432 L235,422 L195,402 L165,382 L143,352 L128,312 Z"},
-  {name:"Ashanti Region",risk:"MEDIUM",d:"M195,402 L235,422 L275,432 L315,442 L355,452 L395,462 L435,472 L455,512 L445,552 L415,572 L375,562 L335,552 L295,542 L255,532 L215,512 L188,482 L183,452 Z"},
-  {name:"Eastern Region",risk:"HIGH",d:"M335,552 L375,562 L415,572 L455,562 L475,592 L485,632 L465,662 L435,672 L405,662 L375,642 L345,622 L323,594 L318,568 Z"},
-  {name:"Oti Region",risk:"MEDIUM",d:"M455,322 L475,262 L505,222 L545,192 L575,212 L585,272 L575,342 L555,412 L535,472 L515,512 L495,552 L485,582 L485,632 L465,662 L435,672 L415,572 L455,512 L455,462 L475,412 L465,362 Z"},
-  {name:"Western Region",risk:"CRITICAL",d:"M143,472 L188,482 L215,512 L255,532 L295,542 L318,568 L323,594 L313,624 L293,652 L263,672 L233,682 L203,672 L173,642 L153,612 L138,572 L128,532 L133,492 Z"},
-  {name:"Central Region",risk:"HIGH",d:"M313,624 L343,622 L375,642 L405,662 L415,692 L395,722 L365,732 L335,722 L308,702 L298,672 L293,652 Z"},
-  {name:"Greater Accra",risk:"MEDIUM",d:"M415,692 L435,672 L465,662 L495,672 L505,702 L495,727 L468,742 L442,737 L418,722 Z"},
-  {name:"Volta Region",risk:"LOW",d:"M455,362 L475,412 L455,462 L455,512 L415,572 L395,462 L435,472 L455,452 L465,372 Z"},
-  {name:"Bono East",risk:"MEDIUM",d:"M425,362 L455,372 L465,452 L435,472 L395,462 L355,452 L345,372 Z"},
-];
 
 function Tag({label,color=CYAN,bg}){
   return <span style={{fontFamily:FM,fontSize:10,padding:"3px 9px",borderRadius:4,fontWeight:600,background:bg||`${color}18`,color,border:`1px solid ${color}33`,whiteSpace:"nowrap"}}>{label}</span>;
@@ -887,7 +873,7 @@ export default function App(){
   const [customQ,setCustomQ]=useState("");
   const [showRoleModal,setShowRoleModal]=useState(false);
   const [time,setTime]=useState("");
-  const [hovered,setHovered]=useState(null);
+  // hovered state removed - no longer needed with Leaflet map
   const [activeRegion,setActiveRegion]=useState(null);
   const [activeTab,setActiveTab]=useState("Map");
   const [qData,setQData]=useState(null);
