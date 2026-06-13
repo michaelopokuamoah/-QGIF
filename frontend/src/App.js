@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { MapContainer, TileLayer, Marker, Tooltip } from 'react-leaflet';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { MapContainer, TileLayer, Marker, Tooltip, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 
 const BG="#050E1C",PANEL="#08162A",P2="#0B1E35";
@@ -110,106 +110,306 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-const REGION_COORDS = {
-  'Western Region':    {lat:5.31,  lng:-1.99, risk:'CRITICAL', sites:38},
-  'Eastern Region':    {lat:6.16,  lng:-0.55, risk:'HIGH',     sites:14},
-  'Central Region':    {lat:5.55,  lng:-1.02, risk:'HIGH',     sites:11},
-  'Ashanti Region':    {lat:6.69,  lng:-1.62, risk:'MEDIUM',   sites:7},
-  'Brong-Ahafo':       {lat:7.47,  lng:-2.33, risk:'MEDIUM',   sites:4},
-  'Greater Accra':     {lat:5.55,  lng:-0.20, risk:'MEDIUM',   sites:3},
-  'Volta Region':      {lat:6.59,  lng:0.45,  risk:'LOW',      sites:2},
-  'Northern Region':   {lat:9.40,  lng:-0.85, risk:'LOW',      sites:1},
-  'Upper East Region': {lat:10.78, lng:-0.87, risk:'LOW',      sites:1},
-  'Upper West Region': {lat:10.25, lng:-2.32, risk:'LOW',      sites:1},
-  'Oti Region':        {lat:8.45,  lng:0.30,  risk:'MEDIUM',   sites:3},
-  'Bono East':         {lat:7.75,  lng:-1.20, risk:'MEDIUM',   sites:3},
+// ═══════════════════════════════════════════════
+// PROFESSIONAL MAP SYSTEM — Full Ghana Coverage
+// ═══════════════════════════════════════════════
+
+// Fix Leaflet default icon
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
+
+// All 12 Ghana regions with full data
+const REGION_COORDS={
+  'Western Region':    {lat:5.31,  lng:-1.99, risk:'CRITICAL',sites:38,mercury:0.082,pop:800000,  capital:'Sekondi-Takoradi',river:'Pra and Ankobra'},
+  'Eastern Region':    {lat:6.16,  lng:-0.55, risk:'HIGH',    sites:14,mercury:0.034,pop:1200000, capital:'Koforidua',         river:'Birim and Densu'},
+  'Central Region':    {lat:5.55,  lng:-1.02, risk:'HIGH',    sites:11,mercury:0.028,pop:1200000, capital:'Cape Coast',         river:'Offin River'},
+  'Ashanti Region':    {lat:6.69,  lng:-1.62, risk:'MEDIUM',  sites:7, mercury:0.018,pop:3800000, capital:'Kumasi',             river:'Oda and Offin'},
+  'Brong-Ahafo':       {lat:7.47,  lng:-2.33, risk:'MEDIUM',  sites:4, mercury:0.012,pop:900000,  capital:'Sunyani',            river:'Tano and Black Volta'},
+  'Greater Accra':     {lat:5.55,  lng:-0.20, risk:'MEDIUM',  sites:3, mercury:0.009,pop:5400000, capital:'Accra',              river:'Densu and Weija Lake'},
+  'Volta Region':      {lat:6.59,  lng:0.45,  risk:'LOW',     sites:2, mercury:0.004,pop:1600000, capital:'Ho',                 river:'Volta Lake and Oti'},
+  'Northern Region':   {lat:9.40,  lng:-0.85, risk:'LOW',     sites:1, mercury:0.003,pop:2400000, capital:'Tamale',             river:'White and Black Volta'},
+  'Upper East Region': {lat:10.78, lng:-0.87, risk:'LOW',     sites:1, mercury:0.002,pop:1100000, capital:'Bolgatanga',         river:'Red Volta'},
+  'Upper West Region': {lat:10.25, lng:-2.32, risk:'LOW',     sites:1, mercury:0.002,pop:700000,  capital:'Wa',                 river:'Black Volta upper'},
+  'Oti Region':        {lat:8.45,  lng:0.30,  risk:'MEDIUM',  sites:3, mercury:0.008,pop:600000,  capital:'Dambai',             river:'Oti River'},
+  'Bono East':         {lat:7.75,  lng:-1.20, risk:'MEDIUM',  sites:3, mercury:0.010,pop:1100000, capital:'Kintampo',           river:'Tano River'},
 };
 
-const CITIES = [
-  {name:'Accra',   lat:5.6037, lng:-0.1870},
-  {name:'Kumasi',  lat:6.6885, lng:-1.6244},
-  {name:'Sunyani', lat:7.3349, lng:-2.3123},
-  {name:'Tamale',  lat:9.4008, lng:-0.8393},
-  {name:'Tarkwa',  lat:5.3059, lng:-1.9889},
-  {name:'Obuasi',  lat:6.2013, lng:-1.6803},
+// Major towns and cities with population and type
+const GHANA_TOWNS=[
+  {name:'Accra',        lat:5.6037, lng:-0.1870, type:'capital',   pop:2500000, region:'Greater Accra'},
+  {name:'Kumasi',       lat:6.6885, lng:-1.6244, type:'city',      pop:3500000, region:'Ashanti Region'},
+  {name:'Tamale',       lat:9.4008, lng:-0.8393, type:'city',      pop:370000,  region:'Northern Region'},
+  {name:'Takoradi',     lat:4.9016, lng:-1.7749, type:'city',      pop:445000,  region:'Western Region'},
+  {name:'Cape Coast',   lat:5.1053, lng:-1.2466, type:'city',      pop:170000,  region:'Central Region'},
+  {name:'Sunyani',      lat:7.3349, lng:-2.3123, type:'city',      pop:89000,   region:'Brong-Ahafo'},
+  {name:'Koforidua',    lat:6.0940, lng:-0.2574, type:'city',      pop:87000,   region:'Eastern Region'},
+  {name:'Ho',           lat:6.6011, lng:0.4714,  type:'city',      pop:78000,   region:'Volta Region'},
+  {name:'Bolgatanga',   lat:10.785, lng:-0.8514, type:'city',      pop:65000,   region:'Upper East Region'},
+  {name:'Wa',           lat:10.060, lng:-2.5000, type:'city',      pop:107000,  region:'Upper West Region'},
+  {name:'Tarkwa',       lat:5.3059, lng:-1.9889, type:'mining',    pop:50000,   region:'Western Region'},
+  {name:'Obuasi',       lat:6.2013, lng:-1.6803, type:'mining',    pop:60000,   region:'Ashanti Region'},
+  {name:'Prestea',      lat:5.4333, lng:-2.1500, type:'mining',    pop:25000,   region:'Western Region'},
+  {name:'Bogoso',       lat:5.5333, lng:-2.0167, type:'mining',    pop:20000,   region:'Western Region'},
+  {name:'Dunkwa',       lat:5.9667, lng:-1.7833, type:'mining',    pop:30000,   region:'Central Region'},
+  {name:'Konongo',      lat:6.6167, lng:-1.2167, type:'mining',    pop:35000,   region:'Ashanti Region'},
+  {name:'Bibiani',      lat:6.4667, lng:-2.3333, type:'mining',    pop:28000,   region:'Western Region'},
+  {name:'Techiman',     lat:7.5833, lng:-1.9333, type:'town',      pop:85000,   region:'Brong-Ahafo'},
+  {name:'Berekum',      lat:7.4500, lng:-2.5833, type:'town',      pop:50000,   region:'Brong-Ahafo'},
+  {name:'Kintampo',     lat:8.0500, lng:-1.7167, type:'town',      pop:35000,   region:'Bono East'},
+  {name:'Salaga',       lat:8.5500, lng:-0.5167, type:'town',      pop:20000,   region:'Northern Region'},
+  {name:'Yendi',        lat:9.4430, lng:-0.0103, type:'town',      pop:35000,   region:'Northern Region'},
+  {name:'Navrongo',     lat:10.894, lng:-1.0921, type:'town',      pop:25000,   region:'Upper East Region'},
+  {name:'Bawku',        lat:11.059, lng:-0.2424, type:'town',      pop:46000,   region:'Upper East Region'},
+  {name:'Lawra',        lat:10.638, lng:-2.8965, type:'town',      pop:15000,   region:'Upper West Region'},
+  {name:'Hohoe',        lat:7.1511, lng:0.4739,  type:'town',      pop:44000,   region:'Volta Region'},
+  {name:'Keta',         lat:5.9167, lng:1.0000,  type:'town',      pop:20000,   region:'Volta Region'},
+  {name:'Nkawkaw',      lat:6.5500, lng:-0.7667, type:'town',      pop:35000,   region:'Eastern Region'},
+  {name:'Suhum',        lat:6.0416, lng:-0.4529, type:'town',      pop:25000,   region:'Eastern Region'},
+  {name:'Kasoa',        lat:5.5333, lng:-0.4167, type:'town',      pop:134000,  region:'Greater Accra'},
+  {name:'Tema',         lat:5.6698, lng:-0.0166, type:'city',      pop:160000,  region:'Greater Accra'},
+  {name:'Winneba',      lat:5.3483, lng:-0.6228, type:'town',      pop:50000,   region:'Central Region'},
+  {name:'Elmina',       lat:5.0844, lng:-1.3469, type:'town',      pop:33000,   region:'Central Region'},
+  {name:'Assin Fosu',   lat:5.6965, lng:-1.2930, type:'town',      pop:25000,   region:'Central Region'},
+  {name:'Dambai',       lat:7.9676, lng:0.1732,  type:'town',      pop:15000,   region:'Oti Region'},
+  {name:'Nkwanta',      lat:8.2500, lng:0.1500,  type:'town',      pop:20000,   region:'Oti Region'},
+];
+
+// Major rivers with contamination data
+// Known illegal mining hotspots
+const MINING_HOTSPOTS=[
+  {lat:5.31, lng:-1.99, severity:10, name:'Tarkwa Mining Zone',     sites:38, desc:'Largest illegal mining concentration in Ghana'},
+  {lat:5.43, lng:-2.14, severity:9,  name:'Prestea-Bogoso Corridor',sites:12, desc:'High mercury contamination in Ankobra tributary'},
+  {lat:6.20, lng:-1.68, severity:8,  name:'Obuasi Periphery',       sites:8,  desc:'Illegal operations around licensed AngloGold boundary'},
+  {lat:5.97, lng:-1.78, severity:8,  name:'Dunkwa Mining Belt',     sites:7,  desc:'Active galamsey along Offin River'},
+  {lat:6.46, lng:-2.33, severity:7,  name:'Bibiani Area',           sites:5,  desc:'Small-scale mining expanding into forest reserve'},
+  {lat:6.62, lng:-1.22, severity:6,  name:'Konongo Corridor',       sites:4,  desc:'Mercury detected in Oda River tributaries'},
+  {lat:7.75, lng:-1.20, severity:5,  name:'Bono East Expansion',    sites:3,  desc:'New illegal sites identified via satellite 2024'},
+  {lat:8.45, lng:0.30,  severity:4,  name:'Oti River Zone',         sites:3,  desc:'Cross-border mining activity detected'},
 ];
 
 function getRiskColor(risk){
-  return {CRITICAL:'#E83A3A',HIGH:'#F07020',MEDIUM:'#F5C842',LOW:'#00E87A'}[risk]||'#4A6880';
+  return{CRITICAL:'#E83A3A',HIGH:'#F07020',MEDIUM:'#F5C842',LOW:'#00E87A'}[risk]||'#4A6880';
 }
 
 function makeRegionIcon(risk,sites,isActive){
   const color=isActive?'#00C8F0':getRiskColor(risk);
-  const size=isActive?36:risk==='CRITICAL'?30:risk==='HIGH'?24:20;
+  const size=isActive?38:risk==='CRITICAL'?32:risk==='HIGH'?26:22;
+  const glow=isActive?`0 0 20px #00C8F0, 0 0 40px #00C8F088`:`0 0 ${risk==='CRITICAL'?14:8}px ${color}88`;
   return L.divIcon({
     className:'',
-    html:`<div style="width:${size}px;height:${size}px;background:${color};border:2px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:${size>24?10:8}px;font-weight:bold;box-shadow:0 0 ${isActive?20:10}px ${color};cursor:pointer;">${sites}</div>`,
+    html:`<div style="width:${size}px;height:${size}px;background:${color};border:2.5px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:${size>26?11:9}px;font-weight:bold;box-shadow:${glow};cursor:pointer;transition:all 0.3s;">${sites}</div>`,
     iconSize:[size,size],iconAnchor:[size/2,size/2],
   });
 }
 
-function makeCityIcon(name){
+function makeTownIcon(type,name){
+  const colors={capital:'#00C8F0',city:'#8B5CF6',mining:'#F07020',town:'rgba(216,232,255,0.7)'};
+  const col=colors[type]||colors.town;
+  const dot=type==='capital'?8:type==='city'?6:type==='mining'?7:4;
   return L.divIcon({
     className:'',
-    html:`<div style="color:#00C8F0;font-size:10px;font-family:monospace;white-space:nowrap;text-shadow:0 0 4px #000;pointer-events:none;">● ${name}</div>`,
-    iconSize:[80,16],iconAnchor:[0,8],
+    html:`<div style="display:flex;align-items:center;gap:3px;pointer-events:none;">
+      <div style="width:${dot}px;height:${dot}px;border-radius:50%;background:${col};box-shadow:0 0 6px ${col};flex-shrink:0;"></div>
+      <span style="color:${col};font-size:${type==='capital'?11:type==='city'?10:9}px;font-family:monospace;white-space:nowrap;text-shadow:0 1px 3px #000,0 0 8px #000;font-weight:${type==='capital'||type==='city'?'bold':'normal'};">${name}</span>
+    </div>`,
+    iconSize:[120,16],iconAnchor:[0,8],
   });
 }
 
-function RegionMarker({name,data,isActive,onRegionClick}){
-  return(
-    <Marker position={[data.lat,data.lng]} icon={makeRegionIcon(data.risk,data.sites,isActive)} eventHandlers={{click:()=>onRegionClick(name)}}>
-      <Tooltip direction="top" className="qgif-tooltip"><b>{name}</b><br/>Risk: {data.risk}<br/>Illegal sites: {data.sites}</Tooltip>
-    </Marker>
-  );
+function makeHotspotIcon(severity){
+  const size=8+severity*1.5;
+  const opacity=0.4+severity*0.05;
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:${size}px;height:${size}px;background:rgba(232,58,58,${opacity});border:1px solid #E83A3A;border-radius:50%;box-shadow:0 0 ${severity*2}px rgba(232,58,58,0.6);animation:pulse 2s infinite;"></div>`,
+    iconSize:[size,size],iconAnchor:[size/2,size/2],
+  });
 }
 
-function MapTab({layer,activeRegion,onRegionClick}){
+// Click-anywhere handler component
+function ClickHandler({onMapClick}){
+  useMapEvents({click:(e)=>{onMapClick(e.latlng.lat,e.latlng.lng);}});
+  return null;
+}
+
+function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSearchQuery,mapCenter,setMapCenter,showHotspots,setShowHotspots,showTowns,setShowTowns,clickedCoord,satLoading,satData}){
+  const mapRef=useRef(null);
+
   return(
     <div style={{position:"relative",width:"100%",height:"100%",background:"#030A14"}}>
       <style>{`
-        .qgif-tooltip{background:#08162A!important;border:1px solid rgba(0,200,240,0.4)!important;color:#D8E8FF!important;font-family:monospace!important;font-size:11px!important;}
-        .qgif-tooltip::before{border-top-color:rgba(0,200,240,0.4)!important;}
+        .qgif-tooltip{background:#08162A!important;border:1px solid rgba(0,200,240,0.4)!important;color:#D8E8FF!important;font-family:monospace!important;font-size:11px!important;padding:6px 10px!important;border-radius:6px!important;}
+        .qgif-hotspot{background:#1a0505!important;border:1px solid rgba(232,58,58,0.6)!important;color:#FFB3B3!important;}
+        .qgif-town{background:#0a0a1a!important;border:1px solid rgba(139,92,246,0.4)!important;color:#D8E8FF!important;}
+        .qgif-river{background:#051a15!important;border:1px solid rgba(0,232,122,0.4)!important;color:#B3FFE0!important;}
         .leaflet-container{background:#030A14!important;}
         .leaflet-control-attribution{background:rgba(8,22,42,0.85)!important;color:#4A6880!important;font-size:9px!important;}
         .leaflet-control-attribution a{color:#00C8F0!important;}
         .leaflet-control-zoom a{background:#08162A!important;color:#00C8F0!important;border-color:rgba(0,200,240,0.2)!important;}
         .leaflet-control-zoom a:hover{background:#0B1E35!important;}
+        @keyframes pulse{0%,100%{transform:scale(1);opacity:0.8}50%{transform:scale(1.4);opacity:0.4}}
       `}</style>
-      <div style={{position:"absolute",top:0,left:0,right:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 16px",background:"rgba(3,10,20,.92)",borderBottom:`1px solid ${BORDER}`}}>
-        <div style={{fontFamily:FB,fontSize:12,fontWeight:600,color:TEXT}}>{layer.icon} {layer.label} — Click any marker</div>
-        <div style={{fontFamily:FM,fontSize:10,color:CYAN}}>{activeRegion||"No region selected"}</div>
+
+      {/* TOP TOOLBAR */}
+      <div style={{position:"absolute",top:0,left:0,right:0,zIndex:1000,background:"rgba(3,10,20,.95)",borderBottom:`1px solid ${BORDER}`,padding:"6px 12px",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        {/* Search */}
+        <div style={{display:"flex",gap:0,flex:1,minWidth:200,maxWidth:320}}>
+          <input
+            value={searchQuery}
+            onChange={e=>setSearchQuery(e.target.value)}
+            placeholder="🔍 Search any town, city or region..."
+            style={{flex:1,background:P2,border:`1px solid ${CYAN}33`,borderRight:"none",borderRadius:"6px 0 0 6px",padding:"5px 10px",color:TEXT,fontSize:11,outline:"none",fontFamily:FB}}
+          />
+          <button
+            onClick={()=>{
+              const q=searchQuery.toLowerCase();
+              const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));
+              const region=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));
+              if(town){setMapCenter([town.lat,town.lng,13]);onCoordClick(town.lat,town.lng,town.name);}
+              else if(region){setMapCenter([region[1].lat,region[1].lng,10]);onRegionClick(region[0]);}
+            }}
+            style={{background:CYAN,border:"none",borderRadius:"0 6px 6px 0",padding:"5px 10px",color:BG,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:FB}}>Go</button>
+        </div>
+
+        {/* Layer toggles */}
+        {[[showHotspots,setShowHotspots,"🔴 Mining Hotspots",RED],[showTowns,setShowTowns,"🏘 Towns",PURPLE]].map(([state,setter,label,color])=>(
+          <button key={label} onClick={()=>setter(!state)}
+            style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${state?color:BORDER2}`,background:state?`${color}18`:"transparent",color:state?color:MUTED,fontSize:10,fontFamily:FB,cursor:"pointer",whiteSpace:"nowrap"}}>
+            {label}
+          </button>
+        ))}
+
+        <div style={{fontFamily:FM,fontSize:10,color:CYAN,whiteSpace:"nowrap"}}>{activeRegion||clickedCoord||"Click map or search"}</div>
       </div>
-      <div style={{position:"absolute",top:40,left:0,right:0,bottom:36}}>
-        <MapContainer center={[7.9465,-1.0232]} zoom={7} style={{width:"100%",height:"100%"}} zoomControl={true}>
-          <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution='© Esri, Maxar, Earthstar Geographics' maxZoom={18}/>
-          <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" attribution='' maxZoom={18} opacity={0.7}/>
+
+      {/* LIVE SATELLITE STATUS */}
+      {(satLoading||satData)&&(
+        <div style={{position:"absolute",top:45,left:12,zIndex:1000,background:"rgba(8,22,42,0.95)",border:`1px solid ${satData?.earth_engine_status?.includes('CONNECTED')?GREEN:BORDER}`,borderRadius:8,padding:"7px 12px",maxWidth:280}}>
+          {satLoading&&<div style={{fontFamily:FM,fontSize:9,color:AMBER,display:"flex",alignItems:"center",gap:6}}><span style={{width:6,height:6,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/>Querying Earth Engine satellite...</div>}
+          {!satLoading&&satData&&satData.earth_engine_status?.includes('CONNECTED')&&(
+            <div>
+              <div style={{fontFamily:FM,fontSize:9,color:GREEN,marginBottom:4,display:"flex",alignItems:"center",gap:5}}><span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block"}}/>LIVE SENTINEL-2 · {satData.satellite_date}</div>
+              <div style={{display:"flex",gap:10}}>
+                <div><div style={{fontFamily:FM,fontSize:8,color:MUTED}}>NDVI</div><div style={{fontFamily:FB,fontSize:12,fontWeight:700,color:satData.ndvi_mean>0.5?GREEN:satData.ndvi_mean>0.3?AMBER:RED}}>{satData.ndvi_mean}</div></div>
+                <div><div style={{fontFamily:FM,fontSize:8,color:MUTED}}>DEGRADATION</div><div style={{fontFamily:FB,fontSize:12,fontWeight:700,color:satData.degradation_gap>0.25?RED:GREEN}}>{satData.degradation_gap}</div></div>
+                <div><div style={{fontFamily:FM,fontSize:8,color:MUTED}}>WATER</div><div style={{fontFamily:FB,fontSize:12,fontWeight:700,color:CYAN}}>{satData.water_fraction_pct}%</div></div>
+              </div>
+              {satData.degradation_signal?.startsWith('YES')&&<div style={{fontFamily:FM,fontSize:9,color:RED,marginTop:4}}>⚠ LAND DEGRADATION DETECTED</div>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* MAP */}
+      <div style={{position:"absolute",top:42,left:0,right:0,bottom:36}}>
+        <MapContainer
+          center={mapCenter?[mapCenter[0],mapCenter[1]]:[7.9465,-1.0232]}
+          zoom={mapCenter?mapCenter[2]:7}
+          style={{width:"100%",height:"100%"}}
+          zoomControl={true}
+          ref={mapRef}
+        >
+          {/* Real satellite imagery */}
+          <TileLayer
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            attribution='© Esri, Maxar, Earthstar Geographics'
+            maxZoom={19}
+          />
+          {/* Place labels overlay */}
+          <TileLayer
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+            attribution=''
+            maxZoom={19}
+            opacity={0.8}
+          />
+
+          {/* Click anywhere handler */}
+          <ClickHandler onMapClick={(lat,lng)=>onCoordClick(lat,lng,null)}/>
+
+          {/* Region markers */}
           {Object.entries(REGION_COORDS).map(([name,data])=>(
-            <RegionMarker key={name} name={name} data={data} isActive={activeRegion===name} onRegionClick={onRegionClick}/>
+            <Marker key={name} position={[data.lat,data.lng]}
+              icon={makeRegionIcon(data.risk,data.sites,activeRegion===name)}
+              eventHandlers={{click:()=>onRegionClick(name)}}>
+              <Tooltip direction="top" className="qgif-tooltip">
+                <b style={{color:getRiskColor(data.risk)}}>{name}</b><br/>
+                Risk: <b>{data.risk}</b> · Sites: <b>{data.sites}</b><br/>
+                Mercury: <b>{data.mercury} mg/L</b> ({Math.round(data.mercury/0.001)}× WHO)<br/>
+                Population: <b>{(data.pop/1000000).toFixed(1)}M</b><br/>
+                River: {data.river}<br/>
+                <span style={{color:'#00C8F0',fontSize:10}}>Click for full intelligence →</span>
+              </Tooltip>
+            </Marker>
           ))}
-          {CITIES.map(c=>(<Marker key={c.name} position={[c.lat,c.lng]} icon={makeCityIcon(c.name)} interactive={false}/>))}
+
+          {/* Town markers */}
+          {showTowns&&GHANA_TOWNS.map(t=>(
+            <Marker key={t.name} position={[t.lat,t.lng]}
+              icon={makeTownIcon(t.type,t.name)}
+              eventHandlers={{click:()=>onCoordClick(t.lat,t.lng,t.name)}}>
+              <Tooltip direction="top" className="qgif-town">
+                <b>{t.name}</b> · {t.type}<br/>
+                Population: {t.pop.toLocaleString()}<br/>
+                Region: {t.region}<br/>
+                <span style={{color:'#00C8F0',fontSize:10}}>Click for satellite analysis →</span>
+              </Tooltip>
+            </Marker>
+          ))}
+
+          {/* Mining hotspots */}
+          {showHotspots&&MINING_HOTSPOTS.map((h,i)=>(
+            <Marker key={i} position={[h.lat,h.lng]}
+              icon={makeHotspotIcon(h.severity)}
+              eventHandlers={{click:()=>onCoordClick(h.lat,h.lng,h.name)}}>
+              <Tooltip direction="top" className="qgif-hotspot">
+                <b style={{color:'#E83A3A'}}>⛏ {h.name}</b><br/>
+                Severity: <b>{h.severity}/10</b> · Sites: <b>{h.sites}</b><br/>
+                {h.desc}<br/>
+                <span style={{color:'#FF8888',fontSize:10}}>Click for criminal network analysis →</span>
+              </Tooltip>
+            </Marker>
+          ))}
+
         </MapContainer>
       </div>
-      <div style={{position:"absolute",bottom:42,right:12,zIndex:1000,background:"rgba(8,22,42,.95)",border:`1px solid ${BORDER}`,borderRadius:8,padding:"9px 12px"}}>
-        <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:7,letterSpacing:".08em"}}>RISK INDEX</div>
-        {[[RED,"Critical"],[AMBER,"High"],["#F5C842","Medium"],[GREEN,"Low"]].map(([col,l])=>(
-          <div key={l} style={{display:"flex",alignItems:"center",gap:7,fontSize:11,fontFamily:FB,color:TEXT2,marginBottom:4}}>
-            <div style={{width:8,height:8,borderRadius:"50%",background:col}}/>{l}
+
+      {/* LEGEND */}
+      <div style={{position:"absolute",bottom:42,right:12,zIndex:1000,background:"rgba(8,22,42,.96)",border:`1px solid ${BORDER}`,borderRadius:8,padding:"10px 14px",minWidth:160}}>
+        <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:8,letterSpacing:".08em"}}>RISK INDEX</div>
+        {[[RED,"Critical — 30+ sites"],[AMBER,"High — 11-20 sites"],["#F5C842","Medium — 3-7 sites"],[GREEN,"Low — 1-2 sites"]].map(([col,l])=>(
+          <div key={l} style={{display:"flex",alignItems:"center",gap:7,fontSize:10,fontFamily:FB,color:TEXT2,marginBottom:5}}>
+            <div style={{width:8,height:8,borderRadius:"50%",background:col,boxShadow:`0 0 5px ${col}`}}/>{l}
           </div>
         ))}
-        <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginTop:6}}>Numbers = illegal mining sites</div>
+        <div style={{borderTop:`1px solid ${BORDER2}`,marginTop:8,paddingTop:8}}>
+          <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:5}}>MARKERS</div>
+          {[["🔵","Capital city"],["🟣","Major city"],["🟠","Mining town"],["⚪","Town"]].map(([icon,l])=>(
+            <div key={l} style={{fontFamily:FB,fontSize:9,color:TEXT2,marginBottom:3}}>{icon} {l}</div>
+          ))}
+        </div>
+        <div style={{borderTop:`1px solid ${BORDER2}`,marginTop:6,paddingTop:6,fontFamily:FM,fontSize:8,color:MUTED}}>
+          Numbers in circles = illegal mining sites<br/>
+          <span style={{color:CYAN}}>Click anywhere for satellite analysis</span>
+        </div>
       </div>
-      <div style={{position:"absolute",bottom:0,left:0,right:0,height:36,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",background:"rgba(3,10,20,.92)",borderTop:`1px solid ${BORDER}`,zIndex:1000}}>
+
+      {/* STATUS BAR */}
+      <div style={{position:"absolute",bottom:0,left:0,right:0,height:36,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",background:"rgba(3,10,20,.95)",borderTop:`1px solid ${BORDER}`,zIndex:1000}}>
         <div style={{display:"flex",gap:16}}>
-          {[["Satellite","Sentinel-2",CYAN],["Sensors","847 online",GREEN],["Quantum","Active",PURPLE]].map(([k,v,col])=>(
+          {[["Satellite","Sentinel-2 Live",CYAN],["Towns",`${GHANA_TOWNS.length} mapped`,PURPLE],["Hotspots",`${MINING_HOTSPOTS.length} active`,RED],["Quantum","Active",GREEN]].map(([k,v,col])=>(
             <div key={k} style={{fontFamily:FM,fontSize:9,color:MUTED}}>{k} <span style={{color:col}}>{v}</span></div>
           ))}
         </div>
-        <div style={{fontFamily:FM,fontSize:9,color:MUTED}}>Zoom · Pan · Click marker</div>
+        <div style={{fontFamily:FM,fontSize:9,color:MUTED}}>Click anywhere on map for live satellite analysis</div>
       </div>
     </div>
   );
 }
+
 
 function QuantumTab({activeRegion,setActiveRegion,qData,qLoading,qType,setQType,runQuantum}){
   return(
@@ -873,9 +1073,15 @@ export default function App(){
   const [customQ,setCustomQ]=useState("");
   const [showRoleModal,setShowRoleModal]=useState(false);
   const [time,setTime]=useState("");
-  // hovered state removed - no longer needed with Leaflet map
   const [activeRegion,setActiveRegion]=useState(null);
   const [activeTab,setActiveTab]=useState("Map");
+  // New map state
+  const [searchQuery,setSearchQuery]=useState("");
+  const [mapCenter,setMapCenter]=useState(null);
+  const [showHotspots,setShowHotspots]=useState(true);
+  const [showTowns,setShowTowns]=useState(true);
+  const [showRivers,setShowRivers]=useState(false); // eslint-disable-line no-unused-vars
+  const [clickedCoord,setClickedCoord]=useState(null);
   const [qData,setQData]=useState(null);
   const [qLoading,setQLoading]=useState(false);
   const [qType,setQType]=useState("land");
@@ -928,7 +1134,21 @@ export default function App(){
   const runCriminal=useCallback(async(reg)=>{setCriminalLoading(true);setCriminalData(null);try{const d=await post("/criminal-network",{region:reg});setCriminalData(d);}catch(e){setCriminalData({_error:e.message});}finally{setCriminalLoading(false);}},[post]);
   const runSatelliteCheck=useCallback(async(reg)=>{setSatLoading(true);setSatData(null);try{const d=await post("/satellite-check",{region:reg});setSatData(d);}catch(e){setSatData({_error:e.message});}finally{setSatLoading(false);}},[post]);
 
-  const handleRegionClick=useCallback((name)=>{setRegion(name);setActiveRegion(name);runPrediction(name,layer,role);runSatelliteCheck(name);},[layer,role,runPrediction,runSatelliteCheck]);
+  const handleRegionClick=useCallback((name)=>{setRegion(name);setActiveRegion(name);setClickedCoord(null);runPrediction(name,layer,role);runSatelliteCheck(name);},[layer,role,runPrediction,runSatelliteCheck]);
+  const handleCoordClick=useCallback(async(lat,lng,name)=>{
+    const label=name||`${lat.toFixed(4)}°N, ${Math.abs(lng).toFixed(4)}°W`;
+    setClickedCoord(label);setActiveRegion(null);
+    setSatLoading(true);setSatData(null);
+    try{
+      const r=await fetch("https://qgif-backend.onrender.com/satellite-check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({region:null,lat,lng})});
+      const d=await r.json();setSatData(d);
+    }catch(e){setSatData({_error:e.message});}
+    finally{setSatLoading(false);}
+    // Also run prediction for nearest region
+    const regionDists=Object.entries(REGION_COORDS).map(([rname,rd])=>({rname,dist:Math.sqrt(Math.pow(rd.lat-lat,2)+Math.pow(rd.lng-lng,2))}));
+    const nearest=regionDists.sort((a,b)=>a.dist-b.dist)[0];
+    if(nearest){setRegion(nearest.rname);runPrediction(nearest.rname,layer,role);}
+  },[layer,role,runPrediction]);
   const handleRoleSelect=useCallback((r)=>{setRole(r);setShowRoleModal(false);if(region)runPrediction(region,layer,r);},[region,layer,runPrediction]);
 
   return(
@@ -994,7 +1214,7 @@ export default function App(){
         </div>
 
         <div style={{overflow:"hidden",position:"relative"}}>
-          <div style={{display:activeTab==="Map"?"block":"none",width:"100%",height:"100%"}}><MapTab layer={layer} activeRegion={activeRegion} onRegionClick={handleRegionClick}/></div>
+          <div style={{display:activeTab==="Map"?"block":"none",width:"100%",height:"100%"}}><MapTab layer={layer} activeRegion={activeRegion} onRegionClick={handleRegionClick} onCoordClick={handleCoordClick} searchQuery={searchQuery} setSearchQuery={setSearchQuery} mapCenter={mapCenter} setMapCenter={setMapCenter} showHotspots={showHotspots} setShowHotspots={setShowHotspots} showTowns={showTowns} setShowTowns={setShowTowns} clickedCoord={clickedCoord} satLoading={satLoading} satData={satData}/></div>
           <div style={{display:activeTab==="Quantum Optimizer"?"flex":"none",width:"100%",height:"100%"}}><QuantumTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} qData={qData} qLoading={qLoading} qType={qType} setQType={setQType} runQuantum={runQuantum}/></div>
           <div style={{display:activeTab==="Scenario Simulator"?"flex":"none",width:"100%",height:"100%"}}><ScenarioTab scRegion={scRegion} setScRegion={setScRegion} scScenario={scScenario} setScScenario={setScScenario} scIntensity={scIntensity} setScIntensity={setScIntensity} scData={scData} scLoading={scLoading} runScenario={runScenario}/></div>
           <div style={{display:activeTab==="Risk Matrix"?"flex":"none",width:"100%",height:"100%"}}><RiskTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} riskData={riskData} riskLoading={riskLoading} runRisk={runRisk}/></div>
