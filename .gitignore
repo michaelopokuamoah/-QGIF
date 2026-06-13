@@ -1,0 +1,10 @@
+﻿gee-key.json
+node_modules/
+frontend/node_modules/
+frontend/build/
+.env
+.env.local
+.vscode/
+Thumbs.db
+desktop.ini
+predict-live-output.json
