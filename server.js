@@ -15,12 +15,34 @@ app.use(express.json());
 let EE_READY = false;
 
 function initEarthEngine() {
-  const keyPath = path.join(__dirname, 'gee-key.json');
-  if (!fs.existsSync(keyPath)) {
-    console.log('  ⚠ gee-key.json not found — running with simulated baselines only');
-    return;
+  let privateKey = null;
+
+  // First try environment variable (used on Render/production)
+  if (process.env.GEE_KEY_JSON) {
+    try {
+      privateKey = JSON.parse(process.env.GEE_KEY_JSON);
+      console.log('  ✓ GEE key loaded from environment variable');
+    } catch (e) {
+      console.log('  ⚠ GEE_KEY_JSON environment variable found but invalid JSON:', e.message);
+    }
   }
-  const privateKey = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+
+  // Fall back to file (used locally)
+  if (!privateKey) {
+    const keyPath = path.join(__dirname, 'gee-key.json');
+    if (!fs.existsSync(keyPath)) {
+      console.log('  ⚠ gee-key.json not found and GEE_KEY_JSON not set — running with simulated baselines only');
+      return;
+    }
+    try {
+      privateKey = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+      console.log('  ✓ GEE key loaded from gee-key.json file');
+    } catch (e) {
+      console.log('  ⚠ gee-key.json found but invalid JSON:', e.message);
+      return;
+    }
+  }
+
   ee.data.authenticateViaPrivateKey(privateKey, () => {
     ee.initialize(null, null, () => {
       EE_READY = true;
@@ -32,6 +54,7 @@ function initEarthEngine() {
     console.log('  ⚠ Earth Engine auth error:', err);
   });
 }
+
 
 initEarthEngine();
 
