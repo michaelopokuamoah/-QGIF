@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { MapContainer, TileLayer, Marker, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 
 const BG="#050E1C",PANEL="#08162A",P2="#0B1E35";
 const CYAN="#00C8F0",GREEN="#00E87A",AMBER="#F07020",RED="#E83A3A",PURPLE="#8B5CF6";
@@ -197,7 +196,8 @@ function MapTab({layer,activeRegion,onRegionClick}){
       </div>
       <div style={{position:"absolute",top:40,left:0,right:0,bottom:36}}>
         <MapContainer center={[7.9465,-1.0232]} zoom={7} style={{width:"100%",height:"100%"}} zoomControl={true}>
-          <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='© <a href="https://carto.com">CARTO</a>' maxZoom={18}/>
+          <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution='© Esri, Maxar, Earthstar Geographics' maxZoom={18}/>
+          <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" attribution='' maxZoom={18} opacity={0.7}/>
           {Object.entries(REGION_COORDS).map(([name,data])=>(
             <RegionMarker key={name} name={name} data={data} isActive={activeRegion===name} onRegionClick={onRegionClick}/>
           ))}
