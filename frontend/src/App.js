@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 const BG="#050E1C",PANEL="#08162A",P2="#0B1E35";
 const CYAN="#00C8F0",GREEN="#00E87A",AMBER="#F07020",RED="#E83A3A",PURPLE="#8B5CF6";
@@ -115,55 +115,180 @@ function BulletList({items,color=CYAN,icon="•"}){
 }
 
 function MapTab({layer,activeRegion,hovered,setHovered,onRegionClick}){
-  const SF={CRITICAL:"rgba(232,58,58,0.1)",HIGH:"rgba(240,112,32,0.08)",MEDIUM:"rgba(245,200,66,0.06)",LOW:"rgba(0,232,122,0.04)"};
-  const SS={CRITICAL:"rgba(232,58,58,0.38)",HIGH:"rgba(240,112,32,0.32)",MEDIUM:"rgba(245,200,66,0.26)",LOW:"rgba(0,232,122,0.2)"};
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const markersRef = useRef([]);
+
+  // Ghana region coordinates and risk data
+  const REGION_COORDS = {
+    'Western Region':    {lat:5.31,  lng:-1.99, risk:'CRITICAL', sites:38},
+    'Eastern Region':    {lat:6.16,  lng:-0.55, risk:'HIGH',     sites:14},
+    'Central Region':    {lat:5.55,  lng:-1.02, risk:'HIGH',     sites:11},
+    'Ashanti Region':    {lat:6.69,  lng:-1.62, risk:'MEDIUM',   sites:7},
+    'Brong-Ahafo':       {lat:7.47,  lng:-2.33, risk:'MEDIUM',   sites:4},
+    'Greater Accra':     {lat:5.55,  lng:-0.20, risk:'MEDIUM',   sites:3},
+    'Volta Region':      {lat:6.59,  lng:0.45,  risk:'LOW',      sites:2},
+    'Northern Region':   {lat:9.40,  lng:-0.85, risk:'LOW',      sites:1},
+    'Upper East Region': {lat:10.78, lng:-0.87, risk:'LOW',      sites:1},
+    'Upper West Region': {lat:10.25, lng:-2.32, risk:'LOW',      sites:1},
+    'Oti Region':        {lat:8.45,  lng:0.30,  risk:'MEDIUM',   sites:3},
+    'Bono East':         {lat:7.75,  lng:-1.20, risk:'MEDIUM',   sites:3},
+  };
+
+  const riskColor = (risk) => ({
+    CRITICAL:'#E83A3A', HIGH:'#F07020', MEDIUM:'#F5C842', LOW:'#00E87A'
+  }[risk]||'#4A6880');
+
+  useEffect(()=>{
+    if(mapInstanceRef.current) return;
+    const L = window.L;
+    if(!L) return;
+
+    // Initialize map centered on Ghana
+    const map = L.map(mapRef.current, {
+      center: [7.9465, -1.0232],
+      zoom: 7,
+      zoomControl: true,
+      attributionControl: true,
+    });
+
+    // OpenStreetMap tile layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 18,
+    }).addTo(map);
+
+    // Dark overlay for QGIF aesthetic
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '© CARTO',
+      maxZoom: 18,
+      opacity: 0.7,
+    }).addTo(map);
+
+    mapInstanceRef.current = map;
+
+    // Add markers for each region
+    Object.entries(REGION_COORDS).forEach(([name, data]) => {
+      const color = riskColor(data.risk);
+      const size = data.risk === 'CRITICAL' ? 28 : data.risk === 'HIGH' ? 22 : 18;
+
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="
+          width:${size}px;height:${size}px;
+          background:${color};
+          border:2px solid white;
+          border-radius:50%;
+          display:flex;align-items:center;justify-content:center;
+          color:white;font-size:9px;font-weight:bold;
+          box-shadow:0 0 12px ${color}88;
+          cursor:pointer;
+        ">${data.sites}</div>`,
+        iconSize: [size, size],
+        iconAnchor: [size/2, size/2],
+      });
+
+      const marker = L.marker([data.lat, data.lng], {icon})
+        .addTo(map)
+        .bindTooltip(`<b>${name}</b><br/>Risk: ${data.risk}<br/>Sites: ${data.sites}`, {
+          className: 'qgif-tooltip',
+          direction: 'top',
+        })
+        .on('click', () => onRegionClick(name));
+
+      markersRef.current.push({name, marker});
+    });
+
+    // Add key cities
+    const cities = [
+      {name:'Accra', lat:5.6037, lng:-0.1870},
+      {name:'Kumasi', lat:6.6885, lng:-1.6244},
+      {name:'Sunyani', lat:7.3349, lng:-2.3123},
+      {name:'Tamale', lat:9.4008, lng:-0.8393},
+      {name:'Tarkwa', lat:5.3059, lng:-1.9889},
+    ];
+    cities.forEach(c => {
+      L.marker([c.lat, c.lng], {
+        icon: L.divIcon({
+          className: '',
+          html: `<div style="color:#00C8F0;font-size:10px;font-family:monospace;white-space:nowrap;text-shadow:0 0 4px #000;">● ${c.name}</div>`,
+          iconSize: [80, 16],
+          iconAnchor: [0, 8],
+        })
+      }).addTo(map);
+    });
+
+    return () => { map.remove(); mapInstanceRef.current = null; };
+  }, []);
+
+  // Highlight selected region
+  useEffect(()=>{
+    if(!mapInstanceRef.current) return;
+    markersRef.current.forEach(({name, marker}) => {
+      const data = REGION_COORDS[name];
+      const color = name === activeRegion ? '#00C8F0' : riskColor(data.risk);
+      const size = name === activeRegion ? 34 : (data.risk === 'CRITICAL' ? 28 : data.risk === 'HIGH' ? 22 : 18);
+      const icon = window.L.divIcon({
+        className: '',
+        html: `<div style="
+          width:${size}px;height:${size}px;
+          background:${color};
+          border:2px solid white;
+          border-radius:50%;
+          display:flex;align-items:center;justify-content:center;
+          color:white;font-size:9px;font-weight:bold;
+          box-shadow:0 0 16px ${color};
+          cursor:pointer;
+          transition:all 0.3s;
+        ">${data.sites}</div>`,
+        iconSize: [size, size],
+        iconAnchor: [size/2, size/2],
+      });
+      marker.setIcon(icon);
+    });
+  }, [activeRegion]);
+
   return(
     <div style={{position:"relative",width:"100%",height:"100%",background:"#030A14",overflow:"hidden"}}>
-      <div style={{position:"absolute",left:0,right:0,height:2,zIndex:15,pointerEvents:"none",background:`linear-gradient(90deg,transparent,rgba(0,200,240,.4),${CYAN},rgba(0,200,240,.4),transparent)`,animation:"scan 5s linear infinite"}}/>
-      <div style={{position:"absolute",top:0,left:0,right:0,zIndex:20,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 16px",background:"rgba(3,10,20,.9)",borderBottom:`1px solid ${BORDER}`}}>
-        <div style={{fontFamily:FB,fontSize:12,fontWeight:600,color:TEXT}}>{layer.icon} {layer.label} — Click any region</div>
+      {/* Leaflet CSS */}
+      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+      {/* Leaflet JS */}
+      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+      <style>{`
+        .qgif-tooltip{background:#08162A;border:1px solid rgba(0,200,240,0.3);color:#D8E8FF;font-family:monospace;font-size:11px;}
+        .leaflet-container{background:#030A14;}
+        .leaflet-control-attribution{background:rgba(8,22,42,0.8)!important;color:#4A6880!important;}
+        .leaflet-control-attribution a{color:#00C8F0!important;}
+      `}</style>
+
+      {/* Top bar */}
+      <div style={{position:"absolute",top:0,left:0,right:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 16px",background:"rgba(3,10,20,.92)",borderBottom:`1px solid ${BORDER}`}}>
+        <div style={{fontFamily:FB,fontSize:12,fontWeight:600,color:TEXT}}>{layer.icon} {layer.label} — Click any marker</div>
         <div style={{fontFamily:FM,fontSize:10,color:CYAN}}>{activeRegion||"No region selected"}</div>
       </div>
-      <svg viewBox="0 0 700 820" style={{width:"100%",height:"calc(100% - 76px)",marginTop:40,cursor:"pointer"}} xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <radialGradient id="rg1" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="#E83A3A" stopOpacity=".2"/><stop offset="100%" stopColor="#E83A3A" stopOpacity="0"/></radialGradient>
-          <radialGradient id="rg2" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="#F07020" stopOpacity=".15"/><stop offset="100%" stopColor="#F07020" stopOpacity="0"/></radialGradient>
-          <filter id="blur"><feGaussianBlur stdDeviation="22"/></filter>
-        </defs>
-        {[100,200,300,400,500,600,700].map(y=><line key={y} x1="0" y1={y} x2="700" y2={y} stroke="rgba(0,200,240,.04)" strokeWidth=".5"/>)}
-        {[100,200,300,400,500,600].map(x=><line key={x} x1={x} y1="0" x2={x} y2="820" stroke="rgba(0,200,240,.04)" strokeWidth=".5"/>)}
-        <ellipse cx="230" cy="560" rx="110" ry="90" fill="url(#rg1)" filter="url(#blur)"/>
-        <ellipse cx="390" cy="440" rx="90" ry="75" fill="url(#rg2)" filter="url(#blur)"/>
-        {MAP_REGIONS.map(r=>(
-          <path key={r.name} d={r.d}
-            fill={activeRegion===r.name?"rgba(0,200,240,.2)":hovered===r.name?"rgba(0,200,240,.08)":SF[r.risk]}
-            stroke={activeRegion===r.name?CYAN:SS[r.risk]}
-            strokeWidth={activeRegion===r.name?1.4:.6}
-            style={{transition:"all .18s",cursor:"pointer"}}
-            onClick={()=>onRegionClick(r.name)}
-            onMouseEnter={()=>setHovered(r.name)}
-            onMouseLeave={()=>setHovered(null)}
-          />
+
+      {/* Map container */}
+      <div ref={mapRef} style={{width:"100%",height:"100%",paddingTop:40}}/>
+
+      {/* Legend */}
+      <div style={{position:"absolute",bottom:40,right:12,zIndex:1000,background:"rgba(8,22,42,.95)",border:`1px solid ${BORDER}`,borderRadius:8,padding:"9px 12px"}}>
+        <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:7,letterSpacing:".08em"}}>RISK INDEX</div>
+        {[[RED,"Critical"],[AMBER,"High"],["#F5C842","Medium"],[GREEN,"Low"]].map(([col,l])=>(
+          <div key={l} style={{display:"flex",alignItems:"center",gap:7,fontSize:12,fontFamily:FB,color:TEXT2,marginBottom:5}}>
+            <div style={{width:8,height:8,borderRadius:"50%",background:col}}/>{l}
+          </div>
         ))}
-        {[[175,152,"UPPER WEST"],[365,148,"UPPER EAST"],[295,280,"NORTHERN"],[308,418,"BRONG-AHAFO"],[318,498,"ASHANTI"],[415,612,"EASTERN"],[215,576,"WESTERN"],[350,678,"CENTRAL"],[458,706,"GR. ACCRA"],[522,432,"VOLTA"],[405,420,"BONO EAST"]].map(([x,y,t])=>(
-          <text key={t} x={x} y={y} fill="rgba(0,200,240,.4)" fontSize="9" fontFamily="sans-serif" textAnchor="middle" pointerEvents="none">{t}</text>
-        ))}
-        {[[354,718,"Accra",5],[308,494,"Kumasi",4],[270,370,"Sunyani",3],[332,200,"Tamale",3]].map(([cx,cy,lbl,r])=>(
-          <g key={lbl}><circle cx={cx} cy={cy} r={r} fill={CYAN} opacity=".85"/><text x={cx+10} y={cy+4} fill={CYAN} fontSize={r*2.5} fontFamily="monospace" opacity=".75">{lbl}</text></g>
-        ))}
-        {[[202,562,RED,0],[424,522,AMBER,.5],[342,272,GREEN,.9]].map(([cx,cy,col,delay])=>(
-          <g key={`hs${cx}`}>
-            <circle r="5" cx={cx} cy={cy} fill="none" stroke={col} strokeWidth="2" style={{animation:`hspulse 2s ease-out infinite ${delay}s`}}/>
-            <circle r="4" cx={cx} cy={cy} fill={col} opacity=".9"/>
-          </g>
-        ))}
-      </svg>
-      <div style={{position:"absolute",bottom:0,left:0,right:0,height:36,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",background:"rgba(3,10,20,.92)",borderTop:`1px solid ${BORDER}`,zIndex:20}}>
+        <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginTop:7}}>Numbers = illegal sites</div>
+      </div>
+
+      {/* Status bar */}
+      <div style={{position:"absolute",bottom:0,left:0,right:0,height:36,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",background:"rgba(3,10,20,.92)",borderTop:`1px solid ${BORDER}`,zIndex:1000}}>
         <div style={{display:"flex",gap:16}}>
           {[["Satellite","Sentinel-2",CYAN],["Sensors","847 online",GREEN],["Quantum","Active",PURPLE]].map(([k,v,col])=>(
             <div key={k} style={{fontFamily:FM,fontSize:9,color:MUTED}}>{k} <span style={{color:col}}>{v}</span></div>
           ))}
         </div>
+        <div style={{fontFamily:FM,fontSize:9,color:MUTED}}>Zoom in to explore · Click marker for intelligence</div>
       </div>
     </div>
   );
