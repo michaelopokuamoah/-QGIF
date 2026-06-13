@@ -899,6 +899,17 @@ export default function App(){
         *{box-sizing:border-box} button{transition:background .15s,border-color .15s,color .15s}
         ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:${BG}} ::-webkit-scrollbar-thumb{background:rgba(0,200,240,.2);border-radius:2px}
         select,input,textarea{transition:border-color .15s} select:focus,input:focus,textarea:focus{border-color:${CYAN}!important}
+        @media(max-width:768px){
+          .desktop-sidebar{display:none!important}
+          .desktop-right{display:none!important}
+          .mobile-bottom{display:flex!important}
+          .tab-scroll{overflow-x:auto!important;flex-wrap:nowrap!important;justify-content:flex-start!important}
+          .tab-scroll::-webkit-scrollbar{height:2px}
+        }
+        @media(min-width:769px){
+          .mobile-bottom{display:none!important}
+        }
+        .mobile-bottom{display:none;position:fixed;bottom:0;left:0;right:0;background:${PANEL};border-top:1px solid ${BORDER};z-index:100;flex-direction:column;max-height:55vh;overflow-y:auto}
       `}</style>
 
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 12px",background:PANEL,borderBottom:`1px solid ${BORDER}`,gap:8}}>
@@ -906,9 +917,9 @@ export default function App(){
           <div style={{width:28,height:28,background:"linear-gradient(135deg,#00C8F0,#8B5CF6)",borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:BG}}>⚛</div>
           <span style={{fontFamily:FH,fontSize:14,color:CYAN,whiteSpace:"nowrap"}}>QGIF</span>
         </div>
-        <div style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"center",flex:1}}>
+        <div className="tab-scroll" style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"center",flex:1,overflow:"hidden"}}>
           {TABS.map(tab=>(
-            <button key={tab} onClick={()=>setActiveTab(tab)} style={{padding:"4px 9px",borderRadius:5,fontFamily:FB,fontSize:10,cursor:"pointer",border:`1px solid ${activeTab===tab?CYAN:BORDER2}`,background:activeTab===tab?`${CYAN}10`:"transparent",color:activeTab===tab?CYAN:MUTED,whiteSpace:"nowrap"}}>{tab}</button>
+            <button key={tab} onClick={()=>setActiveTab(tab)} style={{padding:"4px 9px",borderRadius:5,fontFamily:FB,fontSize:10,cursor:"pointer",border:`1px solid ${activeTab===tab?CYAN:BORDER2}`,background:activeTab===tab?`${CYAN}10`:"transparent",color:activeTab===tab?CYAN:MUTED,whiteSpace:"nowrap",flexShrink:0}}>{tab}</button>
           ))}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
@@ -920,7 +931,7 @@ export default function App(){
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"180px 1fr 300px",height:"calc(100vh - 52px)",overflow:"hidden"}}>
-        <div style={{background:PANEL,borderRight:`1px solid ${BORDER}`,overflowY:"auto"}}>
+        <div className="desktop-sidebar" style={{background:PANEL,borderRight:`1px solid ${BORDER}`,overflowY:"auto"}}>
           <div style={{padding:"10px 8px",borderBottom:`1px solid ${BORDER2}`}}>
             <Label text="INTELLIGENCE LAYERS"/>
             {LAYERS.map(l=>(
@@ -953,7 +964,7 @@ export default function App(){
           <div style={{display:activeTab==="Criminal Network"?"flex":"none",width:"100%",height:"100%"}}><CriminalTab criminalData={criminalData} criminalLoading={criminalLoading} runCriminal={runCriminal}/></div>
         </div>
 
-        <div style={{background:PANEL,borderLeft:`1px solid ${BORDER}`,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <div className="desktop-right" style={{background:PANEL,borderLeft:`1px solid ${BORDER}`,display:"flex",flexDirection:"column",overflow:"hidden"}}>
           <div style={{padding:"10px 12px",borderBottom:`1px solid ${BORDER}`,flexShrink:0}}>
             <div style={{fontFamily:FH,fontSize:13,color:TEXT,fontWeight:"normal"}}>Intelligence Output</div>
             <div style={{fontFamily:FB,fontSize:11,color:MUTED}}>{region?`${region} · ${layer.label}`:"Click any region on the map"}</div>
@@ -1042,6 +1053,54 @@ export default function App(){
           </div>
         </div>
       </div>
+
+      {/* MOBILE BOTTOM PANEL — shown only on small screens */}
+      <div className="mobile-bottom">
+        {/* Live satellite status bar */}
+        {region&&satData&&satData.earth_engine_status==="CONNECTED — REAL SATELLITE DATA"&&(
+          <div style={{padding:"8px 12px",background:`${GREEN}10`,borderBottom:`1px solid ${GREEN}22`,display:"flex",gap:12,alignItems:"center"}}>
+            <span style={{fontFamily:FM,fontSize:9,color:GREEN}}>● LIVE SATELLITE {satData.satellite_date}</span>
+            <span style={{fontFamily:FM,fontSize:9,color:TEXT2}}>NDVI: {satData.ndvi_mean}</span>
+            <span style={{fontFamily:FM,fontSize:9,color:satData.degradation_gap>0.25?AMBER:GREEN}}>Gap: {satData.degradation_gap}</span>
+          </div>
+        )}
+        {/* Region quick-select */}
+        <div style={{padding:"8px 12px",borderBottom:`1px solid ${BORDER}`}}>
+          <div style={{fontFamily:FM,fontSize:9,color:MUTED,marginBottom:6}}>TAP REGION</div>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {REGIONS.map(r=>(
+              <button key={r.name} onClick={()=>handleRegionClick(r.name)}
+                style={{padding:"4px 8px",borderRadius:5,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}10`:"transparent",color:activeRegion===r.name?CYAN:MUTED,fontSize:10,fontFamily:FB,cursor:"pointer"}}>
+                {r.name}
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Intelligence output */}
+        {loading&&<div style={{padding:12}}><Spinner label="Analysing..."/></div>}
+        {!loading&&prediction&&!prediction._error&&(
+          <div style={{padding:"10px 12px",overflowY:"auto"}}>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>
+              <Tag label={prediction.severity} color={SEV_C[prediction.severity]} bg={SEV_BG[prediction.severity]}/>
+              <Tag label={prediction.confidence} color={CYAN}/>
+            </div>
+            <div style={{fontFamily:FH,fontSize:15,color:TEXT,marginBottom:6,fontWeight:"normal"}}>{prediction.title}</div>
+            <div style={{fontFamily:FB,fontSize:12,color:TEXT,lineHeight:1.7,padding:"8px 10px",background:P2,borderRadius:7,borderLeft:`3px solid ${CYAN}`,marginBottom:8}}>{prediction.analysis}</div>
+            {(prediction.findings||[]).slice(0,2).map((f,i)=>(
+              <div key={i} style={{display:"flex",gap:8,padding:"6px 10px",background:P2,borderRadius:6,marginBottom:5}}>
+                <div style={{width:6,height:6,borderRadius:"50%",flexShrink:0,marginTop:4,background:{critical:RED,high:AMBER,medium:"#F5C842",low:GREEN}[f.severity]||CYAN}}/>
+                <div style={{fontFamily:FB,fontSize:11,color:TEXT,lineHeight:1.6}}>{f.text}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        {!loading&&!prediction&&(
+          <div style={{padding:"16px 12px",textAlign:"center"}}>
+            <div style={{fontFamily:FB,fontSize:13,color:MUTED}}>Tap a region above to get intelligence</div>
+          </div>
+        )}
+      </div>
+
 
       {showRoleModal&&(
         <div onClick={()=>setShowRoleModal(false)} style={{position:"fixed",inset:0,background:"rgba(3,10,20,.9)",backdropFilter:"blur(12px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
