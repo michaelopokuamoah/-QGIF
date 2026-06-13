@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { MapContainer, TileLayer, Marker, Tooltip, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 const BG="#050E1C",PANEL="#08162A",P2="#0B1E35";
 const CYAN="#00C8F0",GREEN="#00E87A",AMBER="#F07020",RED="#E83A3A",PURPLE="#8B5CF6";
@@ -114,181 +117,109 @@ function BulletList({items,color=CYAN,icon="•"}){
   );
 }
 
-function MapTab({layer,activeRegion,hovered,setHovered,onRegionClick}){
-  const mapRef = useRef(null);
-  const mapInstanceRef = useRef(null);
-  const markersRef = useRef([]);
+// ── Global constants for Leaflet map ──
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
 
-  // Ghana region coordinates and risk data
-  const REGION_COORDS = {
-    'Western Region':    {lat:5.31,  lng:-1.99, risk:'CRITICAL', sites:38},
-    'Eastern Region':    {lat:6.16,  lng:-0.55, risk:'HIGH',     sites:14},
-    'Central Region':    {lat:5.55,  lng:-1.02, risk:'HIGH',     sites:11},
-    'Ashanti Region':    {lat:6.69,  lng:-1.62, risk:'MEDIUM',   sites:7},
-    'Brong-Ahafo':       {lat:7.47,  lng:-2.33, risk:'MEDIUM',   sites:4},
-    'Greater Accra':     {lat:5.55,  lng:-0.20, risk:'MEDIUM',   sites:3},
-    'Volta Region':      {lat:6.59,  lng:0.45,  risk:'LOW',      sites:2},
-    'Northern Region':   {lat:9.40,  lng:-0.85, risk:'LOW',      sites:1},
-    'Upper East Region': {lat:10.78, lng:-0.87, risk:'LOW',      sites:1},
-    'Upper West Region': {lat:10.25, lng:-2.32, risk:'LOW',      sites:1},
-    'Oti Region':        {lat:8.45,  lng:0.30,  risk:'MEDIUM',   sites:3},
-    'Bono East':         {lat:7.75,  lng:-1.20, risk:'MEDIUM',   sites:3},
-  };
+const REGION_COORDS = {
+  'Western Region':    {lat:5.31,  lng:-1.99, risk:'CRITICAL', sites:38},
+  'Eastern Region':    {lat:6.16,  lng:-0.55, risk:'HIGH',     sites:14},
+  'Central Region':    {lat:5.55,  lng:-1.02, risk:'HIGH',     sites:11},
+  'Ashanti Region':    {lat:6.69,  lng:-1.62, risk:'MEDIUM',   sites:7},
+  'Brong-Ahafo':       {lat:7.47,  lng:-2.33, risk:'MEDIUM',   sites:4},
+  'Greater Accra':     {lat:5.55,  lng:-0.20, risk:'MEDIUM',   sites:3},
+  'Volta Region':      {lat:6.59,  lng:0.45,  risk:'LOW',      sites:2},
+  'Northern Region':   {lat:9.40,  lng:-0.85, risk:'LOW',      sites:1},
+  'Upper East Region': {lat:10.78, lng:-0.87, risk:'LOW',      sites:1},
+  'Upper West Region': {lat:10.25, lng:-2.32, risk:'LOW',      sites:1},
+  'Oti Region':        {lat:8.45,  lng:0.30,  risk:'MEDIUM',   sites:3},
+  'Bono East':         {lat:7.75,  lng:-1.20, risk:'MEDIUM',   sites:3},
+};
 
-  const riskColor = (risk) => ({
-    CRITICAL:'#E83A3A', HIGH:'#F07020', MEDIUM:'#F5C842', LOW:'#00E87A'
-  }[risk]||'#4A6880');
+const CITIES = [
+  {name:'Accra',   lat:5.6037, lng:-0.1870},
+  {name:'Kumasi',  lat:6.6885, lng:-1.6244},
+  {name:'Sunyani', lat:7.3349, lng:-2.3123},
+  {name:'Tamale',  lat:9.4008, lng:-0.8393},
+  {name:'Tarkwa',  lat:5.3059, lng:-1.9889},
+  {name:'Obuasi',  lat:6.2013, lng:-1.6803},
+];
 
-  useEffect(()=>{
-    if(mapInstanceRef.current) return;
-    const L = window.L;
-    if(!L) return;
+function getRiskColor(risk){
+  return {CRITICAL:'#E83A3A',HIGH:'#F07020',MEDIUM:'#F5C842',LOW:'#00E87A'}[risk]||'#4A6880';
+}
 
-    // Initialize map centered on Ghana
-    const map = L.map(mapRef.current, {
-      center: [7.9465, -1.0232],
-      zoom: 7,
-      zoomControl: true,
-      attributionControl: true,
-    });
+function makeRegionIcon(risk,sites,isActive){
+  const color=isActive?'#00C8F0':getRiskColor(risk);
+  const size=isActive?36:risk==='CRITICAL'?30:risk==='HIGH'?24:20;
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:${size}px;height:${size}px;background:${color};border:2px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:${size>24?10:8}px;font-weight:bold;box-shadow:0 0 ${isActive?20:10}px ${color};cursor:pointer;">${sites}</div>`,
+    iconSize:[size,size],iconAnchor:[size/2,size/2],
+  });
+}
 
-    // OpenStreetMap tile layer
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
-      maxZoom: 18,
-    }).addTo(map);
+function makeCityIcon(name){
+  return L.divIcon({
+    className:'',
+    html:`<div style="color:#00C8F0;font-size:10px;font-family:monospace;white-space:nowrap;text-shadow:0 0 4px #000;pointer-events:none;">● ${name}</div>`,
+    iconSize:[80,16],iconAnchor:[0,8],
+  });
+}
 
-    // Dark overlay for QGIF aesthetic
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '© CARTO',
-      maxZoom: 18,
-      opacity: 0.7,
-    }).addTo(map);
-
-    mapInstanceRef.current = map;
-
-    // Add markers for each region
-    Object.entries(REGION_COORDS).forEach(([name, data]) => {
-      const color = riskColor(data.risk);
-      const size = data.risk === 'CRITICAL' ? 28 : data.risk === 'HIGH' ? 22 : 18;
-
-      const icon = L.divIcon({
-        className: '',
-        html: `<div style="
-          width:${size}px;height:${size}px;
-          background:${color};
-          border:2px solid white;
-          border-radius:50%;
-          display:flex;align-items:center;justify-content:center;
-          color:white;font-size:9px;font-weight:bold;
-          box-shadow:0 0 12px ${color}88;
-          cursor:pointer;
-        ">${data.sites}</div>`,
-        iconSize: [size, size],
-        iconAnchor: [size/2, size/2],
-      });
-
-      const marker = L.marker([data.lat, data.lng], {icon})
-        .addTo(map)
-        .bindTooltip(`<b>${name}</b><br/>Risk: ${data.risk}<br/>Sites: ${data.sites}`, {
-          className: 'qgif-tooltip',
-          direction: 'top',
-        })
-        .on('click', () => onRegionClick(name));
-
-      markersRef.current.push({name, marker});
-    });
-
-    // Add key cities
-    const cities = [
-      {name:'Accra', lat:5.6037, lng:-0.1870},
-      {name:'Kumasi', lat:6.6885, lng:-1.6244},
-      {name:'Sunyani', lat:7.3349, lng:-2.3123},
-      {name:'Tamale', lat:9.4008, lng:-0.8393},
-      {name:'Tarkwa', lat:5.3059, lng:-1.9889},
-    ];
-    cities.forEach(c => {
-      L.marker([c.lat, c.lng], {
-        icon: L.divIcon({
-          className: '',
-          html: `<div style="color:#00C8F0;font-size:10px;font-family:monospace;white-space:nowrap;text-shadow:0 0 4px #000;">● ${c.name}</div>`,
-          iconSize: [80, 16],
-          iconAnchor: [0, 8],
-        })
-      }).addTo(map);
-    });
-
-    return () => { map.remove(); mapInstanceRef.current = null; };
-  }, []);
-
-  // Highlight selected region
-  useEffect(()=>{
-    if(!mapInstanceRef.current) return;
-    markersRef.current.forEach(({name, marker}) => {
-      const data = REGION_COORDS[name];
-      const color = name === activeRegion ? '#00C8F0' : riskColor(data.risk);
-      const size = name === activeRegion ? 34 : (data.risk === 'CRITICAL' ? 28 : data.risk === 'HIGH' ? 22 : 18);
-      const icon = window.L.divIcon({
-        className: '',
-        html: `<div style="
-          width:${size}px;height:${size}px;
-          background:${color};
-          border:2px solid white;
-          border-radius:50%;
-          display:flex;align-items:center;justify-content:center;
-          color:white;font-size:9px;font-weight:bold;
-          box-shadow:0 0 16px ${color};
-          cursor:pointer;
-          transition:all 0.3s;
-        ">${data.sites}</div>`,
-        iconSize: [size, size],
-        iconAnchor: [size/2, size/2],
-      });
-      marker.setIcon(icon);
-    });
-  }, [activeRegion]);
-
+function RegionMarker({name,data,isActive,onRegionClick}){
   return(
-    <div style={{position:"relative",width:"100%",height:"100%",background:"#030A14",overflow:"hidden"}}>
-      {/* Leaflet CSS */}
-      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-      {/* Leaflet JS */}
-      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-      <style>{`
-        .qgif-tooltip{background:#08162A;border:1px solid rgba(0,200,240,0.3);color:#D8E8FF;font-family:monospace;font-size:11px;}
-        .leaflet-container{background:#030A14;}
-        .leaflet-control-attribution{background:rgba(8,22,42,0.8)!important;color:#4A6880!important;}
-        .leaflet-control-attribution a{color:#00C8F0!important;}
-      `}</style>
+    <Marker position={[data.lat,data.lng]} icon={makeRegionIcon(data.risk,data.sites,isActive)} eventHandlers={{click:()=>onRegionClick(name)}}>
+      <Tooltip direction="top" className="qgif-tooltip"><b>{name}</b><br/>Risk: {data.risk}<br/>Illegal sites: {data.sites}</Tooltip>
+    </Marker>
+  );
+}
 
-      {/* Top bar */}
+function MapTab({layer,activeRegion,onRegionClick}){
+  return(
+    <div style={{position:"relative",width:"100%",height:"100%",background:"#030A14"}}>
+      <style>{`
+        .qgif-tooltip{background:#08162A!important;border:1px solid rgba(0,200,240,0.4)!important;color:#D8E8FF!important;font-family:monospace!important;font-size:11px!important;}
+        .qgif-tooltip::before{border-top-color:rgba(0,200,240,0.4)!important;}
+        .leaflet-container{background:#030A14!important;}
+        .leaflet-control-attribution{background:rgba(8,22,42,0.85)!important;color:#4A6880!important;font-size:9px!important;}
+        .leaflet-control-attribution a{color:#00C8F0!important;}
+        .leaflet-control-zoom a{background:#08162A!important;color:#00C8F0!important;border-color:rgba(0,200,240,0.2)!important;}
+        .leaflet-control-zoom a:hover{background:#0B1E35!important;}
+      `}</style>
       <div style={{position:"absolute",top:0,left:0,right:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 16px",background:"rgba(3,10,20,.92)",borderBottom:`1px solid ${BORDER}`}}>
         <div style={{fontFamily:FB,fontSize:12,fontWeight:600,color:TEXT}}>{layer.icon} {layer.label} — Click any marker</div>
         <div style={{fontFamily:FM,fontSize:10,color:CYAN}}>{activeRegion||"No region selected"}</div>
       </div>
-
-      {/* Map container */}
-      <div ref={mapRef} style={{width:"100%",height:"100%",paddingTop:40}}/>
-
-      {/* Legend */}
-      <div style={{position:"absolute",bottom:40,right:12,zIndex:1000,background:"rgba(8,22,42,.95)",border:`1px solid ${BORDER}`,borderRadius:8,padding:"9px 12px"}}>
+      <div style={{position:"absolute",top:40,left:0,right:0,bottom:36}}>
+        <MapContainer center={[7.9465,-1.0232]} zoom={7} style={{width:"100%",height:"100%"}} zoomControl={true}>
+          <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='© <a href="https://carto.com">CARTO</a>' maxZoom={18}/>
+          {Object.entries(REGION_COORDS).map(([name,data])=>(
+            <RegionMarker key={name} name={name} data={data} isActive={activeRegion===name} onRegionClick={onRegionClick}/>
+          ))}
+          {CITIES.map(c=>(<Marker key={c.name} position={[c.lat,c.lng]} icon={makeCityIcon(c.name)} interactive={false}/>))}
+        </MapContainer>
+      </div>
+      <div style={{position:"absolute",bottom:42,right:12,zIndex:1000,background:"rgba(8,22,42,.95)",border:`1px solid ${BORDER}`,borderRadius:8,padding:"9px 12px"}}>
         <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:7,letterSpacing:".08em"}}>RISK INDEX</div>
         {[[RED,"Critical"],[AMBER,"High"],["#F5C842","Medium"],[GREEN,"Low"]].map(([col,l])=>(
-          <div key={l} style={{display:"flex",alignItems:"center",gap:7,fontSize:12,fontFamily:FB,color:TEXT2,marginBottom:5}}>
+          <div key={l} style={{display:"flex",alignItems:"center",gap:7,fontSize:11,fontFamily:FB,color:TEXT2,marginBottom:4}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:col}}/>{l}
           </div>
         ))}
-        <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginTop:7}}>Numbers = illegal sites</div>
+        <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginTop:6}}>Numbers = illegal mining sites</div>
       </div>
-
-      {/* Status bar */}
       <div style={{position:"absolute",bottom:0,left:0,right:0,height:36,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",background:"rgba(3,10,20,.92)",borderTop:`1px solid ${BORDER}`,zIndex:1000}}>
         <div style={{display:"flex",gap:16}}>
           {[["Satellite","Sentinel-2",CYAN],["Sensors","847 online",GREEN],["Quantum","Active",PURPLE]].map(([k,v,col])=>(
             <div key={k} style={{fontFamily:FM,fontSize:9,color:MUTED}}>{k} <span style={{color:col}}>{v}</span></div>
           ))}
         </div>
-        <div style={{fontFamily:FM,fontSize:9,color:MUTED}}>Zoom in to explore · Click marker for intelligence</div>
+        <div style={{fontFamily:FM,fontSize:9,color:MUTED}}>Zoom · Pan · Click marker</div>
       </div>
     </div>
   );
@@ -1077,7 +1008,7 @@ export default function App(){
         </div>
 
         <div style={{overflow:"hidden",position:"relative"}}>
-          <div style={{display:activeTab==="Map"?"block":"none",width:"100%",height:"100%"}}><MapTab layer={layer} activeRegion={activeRegion} hovered={hovered} setHovered={setHovered} onRegionClick={handleRegionClick}/></div>
+          <div style={{display:activeTab==="Map"?"block":"none",width:"100%",height:"100%"}}><MapTab layer={layer} activeRegion={activeRegion} onRegionClick={handleRegionClick}/></div>
           <div style={{display:activeTab==="Quantum Optimizer"?"flex":"none",width:"100%",height:"100%"}}><QuantumTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} qData={qData} qLoading={qLoading} qType={qType} setQType={setQType} runQuantum={runQuantum}/></div>
           <div style={{display:activeTab==="Scenario Simulator"?"flex":"none",width:"100%",height:"100%"}}><ScenarioTab scRegion={scRegion} setScRegion={setScRegion} scScenario={scScenario} setScScenario={setScScenario} scIntensity={scIntensity} setScIntensity={setScIntensity} scData={scData} scLoading={scLoading} runScenario={runScenario}/></div>
           <div style={{display:activeTab==="Risk Matrix"?"flex":"none",width:"100%",height:"100%"}}><RiskTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} riskData={riskData} riskLoading={riskLoading} runRisk={runRisk}/></div>
