@@ -341,6 +341,7 @@ function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSe
   }
 
   // Desktop — full Leaflet satellite map
+  const mapRef=useRef(null);
   return(
     <div style={{position:"relative",width:"100%",height:"100%",background:"#030A14"}}>
       <style>{`
