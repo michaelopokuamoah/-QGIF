@@ -237,6 +237,16 @@ function ClickHandler({onMapClick}){
   return null;
 }
 
+function FlyToHandler({center}){
+  const map=useMapEvents({});
+  useEffect(()=>{
+    if(center&&center.length>=2){
+      map.flyTo([center[0],center[1]],center[2]||13,{duration:1.2});
+    }
+  },[center,map]);
+  return null;
+}
+
 function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSearchQuery,mapCenter,setMapCenter,showHotspots,setShowHotspots,showTowns,setShowTowns,clickedCoord,satLoading,satData}){
   const mapRef=useRef(null);
 
@@ -256,35 +266,29 @@ function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSe
       `}</style>
 
       {/* TOP TOOLBAR */}
-      <div style={{position:"absolute",top:0,left:0,right:0,zIndex:1000,background:"rgba(3,10,20,.95)",borderBottom:`1px solid ${BORDER}`,padding:"6px 12px",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+      <div style={{position:"absolute",top:0,left:0,right:0,zIndex:1000,background:"rgba(3,10,20,.95)",borderBottom:`1px solid ${BORDER}`,padding:"6px 10px",display:"flex",gap:6,alignItems:"center",flexWrap:"nowrap",overflow:"hidden"}}>
         {/* Search */}
-        <div style={{display:"flex",gap:0,flex:1,minWidth:200,maxWidth:320}}>
+        <div style={{display:"flex",gap:0,flex:1,minWidth:0}}>
           <input
             value={searchQuery}
             onChange={e=>setSearchQuery(e.target.value)}
-            placeholder="Search any town, city or region..."
-            style={{flex:1,background:P2,border:`1px solid ${CYAN}33`,borderRight:"none",borderRadius:"6px 0 0 6px",padding:"5px 10px",color:TEXT,fontSize:11,outline:"none",fontFamily:FB}}
+            onKeyDown={e=>{if(e.key==="Enter"){const q=searchQuery.toLowerCase();const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));const reg=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));if(town){setMapCenter([town.lat,town.lng,13]);onCoordClick(town.lat,town.lng,town.name);}else if(reg){setMapCenter([reg[1].lat,reg[1].lng,9]);onRegionClick(reg[0]);}}}}
+            placeholder="Search any town or region..."
+            style={{flex:1,minWidth:0,background:P2,border:`1px solid ${CYAN}33`,borderRight:"none",borderRadius:"6px 0 0 6px",padding:"6px 8px",color:TEXT,fontSize:12,outline:"none",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}
           />
           <button
-            onClick={()=>{
-              const q=searchQuery.toLowerCase();
-              const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));
-              const region=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));
-              if(town){setMapCenter([town.lat,town.lng,13]);onCoordClick(town.lat,town.lng,town.name);}
-              else if(region){setMapCenter([region[1].lat,region[1].lng,10]);onRegionClick(region[0]);}
-            }}
-            style={{background:CYAN,border:"none",borderRadius:"0 6px 6px 0",padding:"5px 10px",color:BG,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:FB}}>Go</button>
+            onClick={()=>{const q=searchQuery.toLowerCase();const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));const reg=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));if(town){setMapCenter([town.lat,town.lng,13]);onCoordClick(town.lat,town.lng,town.name);}else if(reg){setMapCenter([reg[1].lat,reg[1].lng,9]);onRegionClick(reg[0]);}}}
+            style={{background:CYAN,border:"none",borderRadius:"0 6px 6px 0",padding:"6px 10px",color:BG,fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>Go</button>
         </div>
-
-        {/* Layer toggles */}
-        {[[showHotspots,setShowHotspots,"🔴 Mining Hotspots",RED],[showTowns,setShowTowns,"🏘 Towns",PURPLE]].map(([state,setter,label,color])=>(
-          <button key={label} onClick={()=>setter(!state)}
-            style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${state?color:BORDER2}`,background:state?`${color}18`:"transparent",color:state?color:MUTED,fontSize:10,fontFamily:FB,cursor:"pointer",whiteSpace:"nowrap"}}>
-            {label}
-          </button>
-        ))}
-
-        <div style={{fontFamily:FM,fontSize:10,color:CYAN,whiteSpace:"nowrap"}}>{activeRegion||clickedCoord||"Click map or search"}</div>
+        {/* Toggles */}
+        <button onClick={()=>setShowHotspots(!showHotspots)}
+          style={{padding:"5px 8px",borderRadius:5,border:`1px solid ${showHotspots?RED:BORDER2}`,background:showHotspots?`${RED}15`:"transparent",color:showHotspots?RED:MUTED,fontSize:11,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+          Hotspots
+        </button>
+        <button onClick={()=>setShowTowns(!showTowns)}
+          style={{padding:"5px 8px",borderRadius:5,border:`1px solid ${showTowns?PURPLE:BORDER2}`,background:showTowns?`${PURPLE}15`:"transparent",color:showTowns?PURPLE:MUTED,fontSize:11,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+          Towns
+        </button>
       </div>
 
       {/* LIVE SATELLITE STATUS */}
@@ -308,11 +312,10 @@ function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSe
       {/* MAP */}
       <div style={{position:"absolute",top:42,left:0,right:0,bottom:36}}>
         <MapContainer
-          center={mapCenter?[mapCenter[0],mapCenter[1]]:[7.9465,-1.0232]}
-          zoom={mapCenter?mapCenter[2]:window.innerWidth<769?7:7}
+          center={[7.9465,-1.0232]}
+          zoom={7}
           minZoom={6}
           maxZoom={19}
-          minZoom={5}
           style={{width:"100%",height:"100%"}}
           zoomControl={true}
           ref={mapRef}
@@ -333,6 +336,8 @@ function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSe
 
           {/* Click anywhere handler */}
           <ClickHandler onMapClick={(lat,lng)=>onCoordClick(lat,lng,null)}/>
+          {/* Fly to location when search/click sets mapCenter */}
+          <FlyToHandler center={mapCenter}/>
 
           {/* Region markers */}
           {Object.entries(REGION_COORDS).map(([name,data])=>(
@@ -1378,13 +1383,25 @@ export default function App(){
         .alert-watch{border-left:3px solid #F5C842;background:rgba(245,200,66,0.06);}
         .alert-improvement{border-left:3px solid #00875A;background:rgba(0,135,90,0.06);}
 
+        /* ── TAB SCROLL ── */
+        .tab-scroll{
+          display:flex;
+          gap:4px;
+          overflow-x:auto;
+          overflow-y:hidden;
+          -webkit-overflow-scrolling:touch;
+          scrollbar-width:none;
+          flex:1;
+          padding:4px 0;
+        }
+        .tab-scroll::-webkit-scrollbar{display:none;}
+        .tab-scroll button{flex-shrink:0;}
+
         /* ── MOBILE ── */
         @media(max-width:768px){
           .desktop-sidebar{display:none!important}
           .desktop-right{display:none!important}
           .mobile-bottom{display:flex!important}
-          .tab-scroll{overflow-x:auto!important;flex-wrap:nowrap!important;justify-content:flex-start!important}
-          .tab-scroll::-webkit-scrollbar{height:2px}
           .main-grid{grid-template-columns:1fr!important}
           .tab-inner{padding:12px;}
           .stat-grid{grid-template-columns:repeat(3,1fr)!important;}
@@ -1397,10 +1414,9 @@ export default function App(){
         .mobile-bottom{
           display:none;position:fixed;bottom:0;left:0;right:0;
           background:#08162A;border-top:1px solid rgba(0,200,240,0.15);
-          z-index:2000;flex-direction:column;max-height:62vh;overflow-y:auto;
+          z-index:2000;flex-direction:column;max-height:65vh;overflow-y:auto;
           -webkit-overflow-scrolling:touch;
         }
-        .tab-scroll{-webkit-overflow-scrolling:touch;}
         .leaflet-container{touch-action:pan-x pan-y!important;}
       `}</style>
 
