@@ -24,7 +24,7 @@ const ROLES=[
 ];
 
 const LAYERS=[
-  {key:"all",icon:"⚛",label:"All Threats"},{key:"mining",icon:"⛏️",label:"Illegal Mining"},
+  {key:"all",icon:"Q",label:"All Threats"},{key:"mining",icon:"⛏️",label:"Illegal Mining"},
   {key:"health",icon:"🏥",label:"Public Health"},{key:"water",icon:"💧",label:"Water Security"},
   {key:"food",icon:"🌾",label:"Food & Agriculture"},{key:"climate",icon:"🌡️",label:"Climate Risk"},
   {key:"conflict",icon:"⚠️",label:"Conflict"},{key:"carbon",icon:"🌲",label:"Carbon & Forest"},
@@ -262,7 +262,7 @@ function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSe
           <input
             value={searchQuery}
             onChange={e=>setSearchQuery(e.target.value)}
-            placeholder="🔍 Search any town, city or region..."
+            placeholder="Search any town, city or region..."
             style={{flex:1,background:P2,border:`1px solid ${CYAN}33`,borderRight:"none",borderRadius:"6px 0 0 6px",padding:"5px 10px",color:TEXT,fontSize:11,outline:"none",fontFamily:FB}}
           />
           <button
@@ -415,7 +415,7 @@ function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSe
 function QuantumTab({activeRegion,setActiveRegion,qData,qLoading,qType,setQType,runQuantum}){
   return(
     <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
-      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>⚛ Quantum Optimizer Engine</div>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Quantum Optimizer Engine</div>
       <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
         {[{key:"land",label:"QAOA Land Use"},{key:"route",label:"Quantum Walk Route"}].map(q=>(
           <button key={q.key} onClick={()=>{setQType(q.key);if(activeRegion)runQuantum(activeRegion,q.key);}}
@@ -427,7 +427,7 @@ function QuantumTab({activeRegion,setActiveRegion,qData,qLoading,qType,setQType,
           <button key={r.name} onClick={()=>{setActiveRegion(r.name);runQuantum(r.name,qType);}} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}10`:"transparent",color:activeRegion===r.name?CYAN:MUTED,cursor:"pointer",fontSize:12,fontFamily:FB}}>{r.name}</button>
         ))}
       </div>
-      {!activeRegion&&!qData&&<div style={{textAlign:"center",padding:"60px 20px"}}><div style={{fontSize:52,opacity:.12}}>⚛</div><div style={{fontFamily:FH,fontSize:16,color:"rgba(216,232,255,.22)",fontWeight:"normal",marginTop:12}}>Select a region above</div></div>}
+      {!activeRegion&&!qData&&<div style={{textAlign:"center",padding:"60px 20px"}}><div style={{fontSize:52,opacity:.12}}>Q</div><div style={{fontFamily:FH,fontSize:16,color:"rgba(216,232,255,.22)",fontWeight:"normal",marginTop:12}}>Select a region above</div></div>}
       {qLoading&&<Spinner label="Running quantum algorithm..."/>}
       {!qLoading&&qData&&!qData._error&&(
         <div>
@@ -545,7 +545,7 @@ function ScenarioTab({scRegion,setScRegion,scScenario,setScScenario,scIntensity,
 function RiskTab({activeRegion,setActiveRegion,riskData,riskLoading,runRisk}){
   return(
     <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
-      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>⚛ Quantum Risk Matrix</div>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Quantum Risk Matrix</div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
         {REGIONS.map(r=>(<button key={r.name} onClick={()=>{setActiveRegion(r.name);runRisk(r.name);}} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}10`:"transparent",color:activeRegion===r.name?CYAN:MUTED,cursor:"pointer",fontSize:12,fontFamily:FB}}>{r.name}</button>))}
       </div>
@@ -593,7 +593,7 @@ function RiskTab({activeRegion,setActiveRegion,riskData,riskLoading,runRisk}){
 function DiseaseTab({activeRegion,setActiveRegion,diseaseData,diseaseLoading,runDisease}){
   return(
     <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
-      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>🧬 Disease Intelligence Engine</div>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Disease Intelligence Engine</div>
       <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Six real mathematical models running simultaneously. Every number calculated from environmental measurements.</p>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
         {REGIONS.map(r=>(<button key={r.name} onClick={()=>{setActiveRegion(r.name);runDisease(r.name);}} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}10`:"transparent",color:activeRegion===r.name?CYAN:MUTED,cursor:"pointer",fontSize:12,fontFamily:FB}}>{r.name}</button>))}
@@ -661,7 +661,7 @@ function LawyerTab({lawyerData,lawyerLoading,runLawyer}){
   const update=(k,v)=>setForm(f=>({...f,[k]:v}));
   return(
     <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
-      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>⚖️ Digital Lawyer — Community Evidence Generator</div>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Digital Lawyer — Community Evidence Generator</div>
       <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Affected communities get automatic court-ready evidence packages from satellite data. Free. Instant. No lawyer needed.</p>
       <Card>
         <Label text="COMMUNITY REPORT"/>
@@ -695,7 +695,7 @@ function LawyerTab({lawyerData,lawyerLoading,runLawyer}){
           <textarea value={form.incidentDescription} onChange={e=>update("incidentDescription",e.target.value)} rows={3} placeholder="Describe the contamination..." style={{width:"100%",background:P2,border:`1px solid ${BORDER}`,borderRadius:7,padding:"8px 11px",color:TEXT,fontSize:13,outline:"none",fontFamily:FB,resize:"vertical"}}/>
         </div>
         <button onClick={()=>runLawyer(form)} disabled={lawyerLoading} style={{width:"100%",padding:"12px",borderRadius:8,border:"none",background:`linear-gradient(135deg,${RED},#BB2222)`,color:"white",fontSize:14,fontFamily:FB,fontWeight:600,cursor:"pointer",opacity:lawyerLoading?.7:1}}>
-          {lawyerLoading?"Generating Evidence...":"⚖️ Generate Court-Ready Evidence Package"}
+          {lawyerLoading?"Generating Evidence...":"Generate Court-Ready Evidence Package"}
         </button>
       </Card>
       {lawyerLoading&&<Spinner label="Compiling satellite evidence and human rights classifications..."/>}
@@ -766,7 +766,7 @@ function DamTab({damData,damLoading,runDam}){
   const update=(k,v)=>setForm(f=>({...f,[k]:v}));
   return(
     <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
-      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>🏔️ Tailings Dam Collapse Predictor</div>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Dam Collapse Risk Predictor</div>
       <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>ICOLD statistical failure model. Predicts collapse 90 days before failure.</p>
       <Card>
         <div style={{marginBottom:10}}>
@@ -788,7 +788,7 @@ function DamTab({damData,damLoading,runDam}){
           ))}
         </div>
         <button onClick={()=>runDam(form)} disabled={damLoading} style={{width:"100%",padding:"12px",borderRadius:8,border:"none",background:`linear-gradient(135deg,${AMBER},#CC6600)`,color:"white",fontSize:14,fontFamily:FB,fontWeight:600,cursor:"pointer",opacity:damLoading?.7:1}}>
-          {damLoading?"Analysing...":"🏔️ Run Collapse Risk Analysis"}
+          {damLoading?"Analysing...":"Run Collapse Risk Analysis"}
         </button>
       </Card>
       {damLoading&&<Spinner label="Running ICOLD structural failure model..."/>}
@@ -862,7 +862,7 @@ function InsuranceTab({insuranceData,insuranceLoading,runInsurance}){
   const update=(k,v)=>setForm(f=>({...f,[k]:v}));
   return(
     <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
-      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>🌱 Parametric Crop Insurance Engine</div>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Parametric Crop Insurance Engine</div>
       <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Satellite-triggered insurance for Ghanaian farmers. No paperwork. Payout via mobile money within 48 hours.</p>
       <Card>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
@@ -884,7 +884,7 @@ function InsuranceTab({insuranceData,insuranceLoading,runInsurance}){
           </div>
         </div>
         <button onClick={()=>runInsurance(form)} disabled={insuranceLoading} style={{width:"100%",padding:"12px",borderRadius:8,border:"none",background:`linear-gradient(135deg,${GREEN},#009944)`,color:"white",fontSize:14,fontFamily:FB,fontWeight:600,cursor:"pointer",opacity:insuranceLoading?.7:1}}>
-          {insuranceLoading?"Calculating...":"🌱 Calculate Insurance & Yield"}
+          {insuranceLoading?"Calculating...":"Calculate Insurance & Yield"}
         </button>
       </Card>
       {insuranceLoading&&<Spinner label="Running satellite yield model..."/>}
@@ -933,13 +933,13 @@ function AirTab({airData,airLoading,runAir}){
   const aqiColor=aqi=>aqi>150?RED:aqi>100?AMBER:aqi>50?"#F5C842":GREEN;
   return(
     <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
-      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>💨 Real-Time Air Quality Alert System</div>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Real-Time Air Quality Alert System</div>
       <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Mercury vapour, PM2.5, SO2 calculated from environmental data. SMS alerts in English and Twi.</p>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
         {REGIONS.map(r=>(<button key={r.name} onClick={()=>setRegion(r.name)} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${region===r.name?CYAN:BORDER2}`,background:region===r.name?`${CYAN}10`:"transparent",color:region===r.name?CYAN:MUTED,cursor:"pointer",fontSize:12,fontFamily:FB}}>{r.name}</button>))}
       </div>
       <button onClick={()=>runAir(region)} disabled={airLoading} style={{width:"100%",padding:"12px",borderRadius:8,border:"none",background:`linear-gradient(135deg,${CYAN},#0099BB)`,color:BG,fontSize:14,fontFamily:FB,fontWeight:600,cursor:"pointer",marginBottom:20,opacity:airLoading?.7:1}}>
-        {airLoading?"Calculating...":"💨 Run Air Quality Analysis"}
+        {airLoading?"Calculating...":"Run Air Quality Analysis"}
       </button>
       {airLoading&&<Spinner label="Calculating pollutants and generating alerts..."/>}
       {!airLoading&&airData&&!airData._error&&(
@@ -999,13 +999,13 @@ function CriminalTab({criminalData,criminalLoading,runCriminal}){
   const [region,setRegion]=useState("Western Region");
   return(
     <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
-      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>🔍 Criminal Network Intelligence</div>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Criminal Network Intelligence</div>
       <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Quantum graph analysis maps illegal mining criminal networks. From site operators to financiers to international gold traders.</p>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
         {REGIONS.map(r=>(<button key={r.name} onClick={()=>setRegion(r.name)} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${region===r.name?CYAN:BORDER2}`,background:region===r.name?`${CYAN}10`:"transparent",color:region===r.name?CYAN:MUTED,cursor:"pointer",fontSize:12,fontFamily:FB}}>{r.name}</button>))}
       </div>
       <button onClick={()=>runCriminal(region)} disabled={criminalLoading} style={{width:"100%",padding:"12px",borderRadius:8,border:"none",background:`linear-gradient(135deg,${PURPLE},#6600BB)`,color:"white",fontSize:14,fontFamily:FB,fontWeight:600,cursor:"pointer",marginBottom:20,opacity:criminalLoading?.7:1}}>
-        {criminalLoading?"Mapping network...":"🔍 Run Criminal Network Analysis"}
+        {criminalLoading?"Mapping network...":"Run Criminal Network Analysis"}
       </button>
       {criminalLoading&&<Spinner label="Running quantum graph analysis..."/>}
       {!criminalLoading&&criminalData&&!criminalData._error&&(
@@ -1071,192 +1071,144 @@ function MonitoringTab({monitorData,monitorLoading,runMonitor,dashData,dashLoadi
   const [orgName,setOrgName]=useState("");
   const [regStatus,setRegStatus]=useState(null);
   const [regLoading,setRegLoading]=useState(false);
-  const API="https://qgif-backend.onrender.com";
-
   const [testEmailStatus,setTestEmailStatus]=useState(null);
   const [testEmailLoading,setTestEmailLoading]=useState(false);
+  const API="https://qgif-backend.onrender.com";
 
   const sendTestEmail=async()=>{
     if(!email){alert("Enter your email first");return;}
     setTestEmailLoading(true);setTestEmailStatus(null);
-    try{
-      const r=await fetch(API+"/monitoring/test-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,secret:"qgif-monitor-2026"})});
-      const d=await r.json();setTestEmailStatus(d);
-    }catch(e){setTestEmailStatus({status:"ERROR",message:e.message});}
+    try{const r=await fetch(API+"/monitoring/test-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,secret:"qgif-monitor-2026"})});const d=await r.json();setTestEmailStatus(d);}
+    catch(e){setTestEmailStatus({status:"ERROR",message:e.message});}
     finally{setTestEmailLoading(false);}
   };
-
   const registerAlert=async()=>{
-    if(!email){return;}
+    if(!email)return;
     setRegLoading(true);setRegStatus(null);
-    try{
-      const r=await fetch(API+"/monitoring/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,organisation:orgName,regions:["all"],severity_threshold:"WARNING",name:orgName})});
-      const d=await r.json();setRegStatus(d);
-    }catch(e){setRegStatus({error:e.message});}
+    try{const r=await fetch(API+"/monitoring/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,organisation:orgName,regions:["all"],severity_threshold:"WARNING",name:orgName})});const d=await r.json();setRegStatus(d);}
+    catch(e){setRegStatus({error:e.message});}
     finally{setRegLoading(false);}
   };
-
   const SEV_COL={CRITICAL:RED,WARNING:AMBER,WATCH:"#F5C842",IMPROVEMENT:GREEN,INFO:CYAN};
+  const SC={CRITICAL:"alert-critical",WARNING:"alert-warning",WATCH:"alert-watch",IMPROVEMENT:"alert-improvement"};
+  const ss={fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"};
+  const sm={fontFamily:"'Courier New',monospace"};
 
   return(
-    <div style={{width:"100%",height:"100%",overflowY:"auto",padding:20,background:BG}}>
-      <div style={{maxWidth:900,margin:"0 auto"}}>
+    <div className="tab-content" style={{background:BG}}>
+      <div className="tab-inner" style={{margin:"0 auto"}}>
 
-        {/* Header */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:10}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:10}}>
           <div>
-            <div style={{fontFamily:FH,fontSize:22,color:TEXT,fontWeight:"normal",marginBottom:4}}>📡 Environmental Monitoring System</div>
-            <div style={{fontFamily:FB,fontSize:12,color:MUTED}}>Automated 30-day satellite surveillance for all 12 Ghana regions</div>
+            <div style={{...ss,fontSize:20,color:TEXT,fontWeight:600,marginBottom:4}}>Environmental Monitoring System</div>
+            <div style={{...sm,fontSize:10,color:MUTED,letterSpacing:".06em",textTransform:"uppercase"}}>Automated 30-day satellite surveillance for all 12 Ghana regions</div>
           </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={loadDash} style={{padding:"8px 14px",borderRadius:7,border:`1px solid ${BORDER}`,background:P2,color:CYAN,fontSize:12,fontFamily:FB,cursor:"pointer"}}>↻ Refresh Dashboard</button>
-            <button onClick={runMonitor} disabled={monitorLoading} style={{padding:"8px 14px",borderRadius:7,border:"none",background:monitorLoading?MUTED:`linear-gradient(135deg,${CYAN},#0099BB)`,color:BG,fontSize:12,fontWeight:700,fontFamily:FB,cursor:monitorLoading?"not-allowed":"pointer"}}>
-              {monitorLoading?"Running check...":"▶ Run Check Now"}
-            </button>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button className="qgif-btn-secondary" onClick={loadDash}>Refresh</button>
+            <button className="qgif-btn-primary" onClick={runMonitor} disabled={monitorLoading}>{monitorLoading?"Running...":"Run Check Now"}</button>
           </div>
         </div>
 
-        {/* How it works */}
-        <div style={{background:P2,borderRadius:10,padding:"12px 16px",marginBottom:16,border:`1px solid ${CYAN}22`}}>
-          <div style={{fontFamily:FM,fontSize:9,color:CYAN,marginBottom:8,letterSpacing:".08em"}}>HOW THE MONITORING SYSTEM WORKS</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10}}>
-            {[
-              ["🛰️","Every 30 Days","System automatically queries Earth Engine for all 12 regions"],
-              ["📊","Compares Readings","Checks if degradation gap increased by more than 0.05"],
-              ["🚨","Generates Alerts","CRITICAL (0.10+), WARNING (0.05+), WATCH (0.02+)"],
-              ["📧","Sends Notifications","Email alerts to registered users instantly"],
-            ].map(([icon,title,desc])=>(
-              <div key={title} style={{background:BG,borderRadius:7,padding:"10px 12px"}}>
-                <div style={{fontSize:18,marginBottom:4}}>{icon}</div>
-                <div style={{fontFamily:FB,fontSize:12,color:CYAN,marginBottom:3}}>{title}</div>
-                <div style={{fontFamily:FB,fontSize:11,color:MUTED,lineHeight:1.5}}>{desc}</div>
+        <div className="qgif-card" style={{marginBottom:16}}>
+          <div className="section-label">How It Works</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+            {[["Every 30 Days","Queries Earth Engine for all 12 regions automatically"],["Compares Readings","Flags regions where degradation gap increases by more than 0.05"],["Generates Alerts","Critical (0.10+), Warning (0.05+), Watch (0.02+), Improvement"],["Sends Email","Registered users receive formatted satellite alert reports"]].map(([t,d])=>(
+              <div key={t} style={{background:BG,borderRadius:7,padding:"10px 12px"}}>
+                <div style={{...ss,fontSize:12,fontWeight:600,color:CYAN,marginBottom:4}}>{t}</div>
+                <div style={{...ss,fontSize:11,color:MUTED,lineHeight:1.5}}>{d}</div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Dashboard */}
-        {dashLoading&&<Spinner label="Loading monitoring dashboard..."/>}
+        {dashLoading&&<Spinner label="Loading dashboard..."/>}
         {!dashLoading&&dashData&&(
           <div>
-            {/* System status */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:16}}>
-              {[
-                ["System",dashData.system_status?.includes("ACTIVE")?"ACTIVE":"DEGRADED",dashData.system_status?.includes("ACTIVE")?GREEN:RED],
-                ["Last Check",dashData.last_full_check||"Never",CYAN],
-                ["Total Runs",dashData.total_monitoring_runs||0,PURPLE],
-                ["Total Alerts",dashData.total_alerts_ever||0,AMBER],
-                ["Critical",dashData.active_critical_alerts||0,RED],
-                ["Warnings",dashData.active_warning_alerts||0,AMBER],
-              ].map(([label,val,col])=>(
-                <div key={label} style={{background:P2,borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
-                  <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:4}}>{label}</div>
-                  <div style={{fontFamily:FB,fontSize:14,fontWeight:700,color:col}}>{val}</div>
+            <div className="section-label">System Status</div>
+            <div className="stat-grid" style={{marginBottom:16}}>
+              {[["Status",dashData.system_status?.includes("ACTIVE")?"Active":"Offline",dashData.system_status?.includes("ACTIVE")?GREEN:RED],["Last Check",dashData.last_full_check||"Never",CYAN],["Total Runs",dashData.total_monitoring_runs||0,PURPLE],["Alerts",dashData.total_alerts_ever||0,AMBER],["Critical",dashData.active_critical_alerts||0,RED],["Warnings",dashData.active_warning_alerts||0,AMBER]].map(([l,v,c])=>(
+                <div key={l} className="stat-box">
+                  <div className="stat-label">{l}</div>
+                  <div className="stat-value" style={{color:c,fontSize:typeof v==="string"&&v.length>6?12:18}}>{v}</div>
                 </div>
               ))}
             </div>
 
-            {/* Region status grid */}
-            <div style={{fontFamily:FM,fontSize:9,color:MUTED,marginBottom:8,letterSpacing:".06em"}}>REGION STATUS</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:6,marginBottom:16}}>
+            <div className="section-label">Region Status</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(175px,1fr))",gap:6,marginBottom:16}}>
               {(dashData.regions||[]).map(r=>(
-                <div key={r.region} style={{background:P2,borderRadius:8,padding:"10px 12px",border:`1px solid ${r.latest_threat_level==="CRITICAL"?RED:r.latest_threat_level==="HIGH"?AMBER:BORDER}`}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                    <div style={{fontFamily:FB,fontSize:11,fontWeight:700,color:TEXT}}>{r.region?.replace(" Region","")}</div>
+                <div key={r.region} className="qgif-card" style={{padding:"10px 12px",borderColor:r.latest_threat_level==="CRITICAL"?"rgba(204,34,34,.4)":r.latest_threat_level==="HIGH"?"rgba(204,102,0,.3)":undefined}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <div style={{...ss,fontSize:11,fontWeight:600,color:TEXT}}>{(r.region||"").replace(" Region","")}</div>
                     {r.latest_threat_level&&<Tag label={r.latest_threat_level} color={SEV_C[r.latest_threat_level]||MUTED}/>}
                   </div>
-                  {r.latest_gap!=null?(
-                    <div style={{display:"flex",gap:10}}>
-                      <div>
-                        <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>DEG. GAP</div>
-                        <div style={{fontFamily:FB,fontSize:13,fontWeight:700,color:r.latest_gap>0.3?RED:r.latest_gap>0.15?AMBER:GREEN}}>{r.latest_gap}</div>
-                      </div>
-                      <div>
-                        <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>MINING</div>
-                        <div style={{fontFamily:FB,fontSize:13,fontWeight:700,color:r.latest_mining_score>60?RED:r.latest_mining_score>30?AMBER:GREEN}}>{r.latest_mining_score}</div>
-                      </div>
-                      <div>
-                        <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>CHECKED</div>
-                        <div style={{fontFamily:FB,fontSize:11,color:MUTED}}>{r.last_checked||"Never"}</div>
-                      </div>
-                    </div>
-                  ):(
-                    <div style={{fontFamily:FB,fontSize:11,color:MUTED}}>No data yet — run check</div>
-                  )}
+                  {r.latest_gap!=null?(<div style={{display:"flex",gap:12}}>
+                    <div><div style={{...sm,fontSize:8,color:MUTED}}>GAP</div><div style={{...ss,fontSize:14,fontWeight:700,color:r.latest_gap>0.3?RED:r.latest_gap>0.15?AMBER:GREEN}}>{r.latest_gap}</div></div>
+                    <div><div style={{...sm,fontSize:8,color:MUTED}}>MINING</div><div style={{...ss,fontSize:14,fontWeight:700,color:r.latest_mining_score>60?RED:r.latest_mining_score>30?AMBER:GREEN}}>{r.latest_mining_score}</div></div>
+                    <div><div style={{...sm,fontSize:8,color:MUTED}}>DATE</div><div style={{...ss,fontSize:10,color:MUTED}}>{r.last_checked||"—"}</div></div>
+                  </div>):<div style={{...ss,fontSize:11,color:MUTED}}>No data yet</div>}
                 </div>
               ))}
             </div>
 
-            {/* Recent alerts */}
-            {dashData.recent_critical_alerts?.length>0||dashData.recent_warnings?.length>0?(
+            {((dashData.recent_critical_alerts||[]).length+(dashData.recent_warnings||[]).length)>0&&(
               <div style={{marginBottom:16}}>
-                <div style={{fontFamily:FM,fontSize:9,color:MUTED,marginBottom:8,letterSpacing:".06em"}}>RECENT ALERTS</div>
-                {[...( dashData.recent_critical_alerts||[]),...(dashData.recent_warnings||[])].map((alert,i)=>(
-                  <div key={i} style={{background:P2,borderRadius:8,padding:"10px 14px",marginBottom:6,borderLeft:`3px solid ${SEV_COL[alert.severity]||CYAN}`}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                <div className="section-label">Recent Alerts</div>
+                {[...(dashData.recent_critical_alerts||[]),...(dashData.recent_warnings||[])].map((alert,i)=>(
+                  <div key={i} className={"qgif-card "+(SC[alert.severity]||"")} style={{padding:"10px 14px",marginBottom:6}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                       <Tag label={alert.severity} color={SEV_COL[alert.severity]||CYAN}/>
-                      <span style={{fontFamily:FM,fontSize:9,color:MUTED}}>{alert.date}</span>
+                      <span style={{...sm,fontSize:9,color:MUTED}}>{alert.date}</span>
                     </div>
-                    <div style={{fontFamily:FB,fontSize:12,color:TEXT,lineHeight:1.6,marginBottom:4}}>{alert.message}</div>
-                    <div style={{fontFamily:FM,fontSize:10,color:CYAN}}>→ {alert.recommended_action}</div>
-                  </div>
-                ))}
-              </div>
-            ):null}
-          </div>
-        )}
-
-        {/* Run results */}
-        {monitorLoading&&<Spinner label="Running satellite checks for all 12 regions... This takes 3-5 minutes"/>}
-        {!monitorLoading&&monitorData&&!monitorData._error&&(
-          <div style={{background:P2,borderRadius:10,padding:"14px 16px",marginBottom:16,border:`1px solid ${GREEN}33`}}>
-            <div style={{fontFamily:FM,fontSize:9,color:GREEN,marginBottom:8}}>✓ MONITORING CHECK COMPLETE — {monitorData.checked_at?.split('T')[0]}</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
-              {[["Regions Checked",monitorData.regions_checked,CYAN],["Regions OK",monitorData.regions_ok,GREEN],["New Alerts",monitorData.new_alerts,monitorData.new_alerts>0?AMBER:GREEN],["Critical",monitorData.critical_alerts,monitorData.critical_alerts>0?RED:GREEN]].map(([l,v,c])=>(
-                <div key={l} style={{textAlign:"center",background:BG,borderRadius:6,padding:"8px 4px"}}>
-                  <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:3}}>{l}</div>
-                  <div style={{fontFamily:FB,fontSize:16,fontWeight:700,color:c}}>{v}</div>
-                </div>
-              ))}
-            </div>
-            {monitorData.alerts?.length>0&&(
-              <div>
-                <div style={{fontFamily:FM,fontSize:9,color:AMBER,marginBottom:6}}>NEW ALERTS FROM THIS CHECK:</div>
-                {monitorData.alerts.map((alert,i)=>(
-                  <div key={i} style={{background:BG,borderRadius:7,padding:"10px 12px",marginBottom:6,borderLeft:`3px solid ${SEV_COL[alert.severity]||CYAN}`}}>
-                    <Tag label={alert.severity} color={SEV_COL[alert.severity]||CYAN}/>
-                    <div style={{fontFamily:FB,fontSize:12,color:TEXT,marginTop:6,lineHeight:1.6}}>{alert.message}</div>
-                    <div style={{fontFamily:FM,fontSize:10,color:CYAN,marginTop:4}}>→ {alert.recommended_action}</div>
+                    <div style={{...ss,fontSize:12,color:TEXT,lineHeight:1.6,marginBottom:4}}>{alert.message}</div>
+                    <div style={{...ss,fontSize:11,color:CYAN,fontWeight:600}}>Action: {alert.recommended_action}</div>
                   </div>
                 ))}
               </div>
             )}
-            {monitorData.new_alerts===0&&<div style={{fontFamily:FB,fontSize:12,color:GREEN}}>✓ No significant changes detected in any region since last check.</div>}
           </div>
         )}
 
-        {/* Register for alerts */}
-        <div style={{background:P2,borderRadius:10,padding:"14px 16px",border:`1px solid ${PURPLE}33`}}>
-          <div style={{fontFamily:FM,fontSize:9,color:PURPLE,marginBottom:10,letterSpacing:".06em"}}>📧 REGISTER FOR MONITORING ALERTS</div>
-          <div style={{fontFamily:FB,fontSize:12,color:TEXT2,marginBottom:12,lineHeight:1.6}}>Get automatic email alerts when QGIF detects new environmental disturbances. Alerts are sent within hours of the monthly satellite check.</div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
-            <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email address" style={{flex:2,minWidth:200,background:BG,border:`1px solid ${BORDER}`,borderRadius:6,padding:"8px 10px",color:TEXT,fontSize:12,outline:"none",fontFamily:FB}}/>
-            <input value={orgName} onChange={e=>setOrgName(e.target.value)} placeholder="Organisation (optional)" style={{flex:2,minWidth:160,background:BG,border:`1px solid ${BORDER}`,borderRadius:6,padding:"8px 10px",color:TEXT,fontSize:12,outline:"none",fontFamily:FB}}/>
-            <button onClick={registerAlert} disabled={regLoading||!email} style={{padding:"8px 16px",borderRadius:6,border:"none",background:regLoading||!email?MUTED:`linear-gradient(135deg,${PURPLE},#7C3AED)`,color:"white",fontSize:12,fontWeight:700,cursor:regLoading||!email?"not-allowed":"pointer",fontFamily:FB}}>
-              {regLoading?"Registering...":"Register"}
-            </button>
-            <button onClick={sendTestEmail} disabled={testEmailLoading||!email} style={{padding:"8px 16px",borderRadius:6,border:`1px solid ${CYAN}`,background:"transparent",color:CYAN,fontSize:12,fontWeight:700,cursor:testEmailLoading||!email?"not-allowed":"pointer",fontFamily:FB}}>
-              {testEmailLoading?"Sending...":"Send Test Email"}
-            </button>
+        {monitorLoading&&<Spinner label="Running satellite checks for all 12 regions — please wait 3 to 5 minutes"/>}
+        {!monitorLoading&&monitorData&&!monitorData._error&&(
+          <div className="qgif-card" style={{marginBottom:16,borderColor:"rgba(0,135,90,.3)"}}>
+            <div className="section-label" style={{color:GREEN}}>Check Complete — {monitorData.checked_at?.split('T')[0]}</div>
+            <div className="stat-grid">
+              {[["Checked",monitorData.regions_checked,CYAN],["OK",monitorData.regions_ok,GREEN],["Alerts",monitorData.new_alerts,monitorData.new_alerts>0?AMBER:GREEN],["Critical",monitorData.critical_alerts,monitorData.critical_alerts>0?RED:GREEN]].map(([l,v,c])=>(
+                <div key={l} className="stat-box"><div className="stat-label">{l}</div><div className="stat-value" style={{color:c}}>{v}</div></div>
+              ))}
+            </div>
+            {monitorData.alerts?.length>0?(<div style={{marginTop:12}}>
+              <div className="section-label">New Alerts</div>
+              {monitorData.alerts.map((alert,i)=>(
+                <div key={i} className={"qgif-card "+(SC[alert.severity]||"")} style={{padding:"10px 12px",marginBottom:6}}>
+                  <Tag label={alert.severity} color={SEV_COL[alert.severity]||CYAN}/>
+                  <div style={{...ss,fontSize:12,color:TEXT,marginTop:6,lineHeight:1.6}}>{alert.message}</div>
+                  <div style={{...ss,fontSize:11,color:CYAN,marginTop:4,fontWeight:600}}>Action: {alert.recommended_action}</div>
+                </div>
+              ))}
+            </div>):<div style={{...ss,fontSize:12,color:GREEN,marginTop:8}}>No significant changes detected since the last check.</div>}
           </div>
-          {regStatus&&!regStatus.error&&<div style={{fontFamily:FB,fontSize:12,color:GREEN,marginBottom:4}}>✓ {regStatus.message}</div>}
-          {regStatus?.error&&<div style={{fontFamily:FB,fontSize:12,color:AMBER,marginBottom:4}}>Error: {regStatus.error}</div>}
-          {testEmailStatus&&<div style={{fontFamily:FB,fontSize:12,color:testEmailStatus.status==="SENT"?GREEN:AMBER,marginBottom:4}}>{testEmailStatus.status==="SENT"?"✓ Test email sent — check your inbox!":"⚠ "+testEmailStatus.message}</div>}
-          <div style={{fontFamily:FM,fontSize:9,color:MUTED,marginTop:8}}>
-            Alert levels: WATCH (minor increase) · WARNING (significant increase, EPA visit recommended) · CRITICAL (major disturbance, immediate action)
+        )}
+
+        <div className="qgif-card" style={{borderColor:"rgba(91,33,182,.3)"}}>
+          <div className="section-label">Register for Monitoring Alerts</div>
+          <div style={{...ss,fontSize:12,color:TEXT2,marginBottom:12,lineHeight:1.7}}>Receive automatic email alerts when QGIF detects new environmental disturbances. Alerts are sent within hours of each monthly satellite check.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
+            <input className="qgif-input" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email address"/>
+            <input className="qgif-input" value={orgName} onChange={e=>setOrgName(e.target.value)} placeholder="Organisation name (optional)"/>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button className="qgif-btn-primary" onClick={registerAlert} disabled={regLoading||!email} style={{flex:1}}>{regLoading?"Registering...":"Register for Alerts"}</button>
+              <button className="qgif-btn-secondary" onClick={sendTestEmail} disabled={testEmailLoading||!email} style={{flex:1}}>{testEmailLoading?"Sending...":"Send Test Email"}</button>
+            </div>
           </div>
+          {regStatus&&!regStatus.error&&<div style={{...ss,fontSize:12,color:GREEN,marginBottom:4}}>Registration confirmed — {regStatus.message}</div>}
+          {regStatus?.error&&<div style={{...ss,fontSize:12,color:AMBER,marginBottom:4}}>Error: {regStatus.error}</div>}
+          {testEmailStatus&&<div style={{...ss,fontSize:12,color:testEmailStatus.status==="SENT"?GREEN:AMBER,marginBottom:4}}>{testEmailStatus.status==="SENT"?"Test email sent successfully — check your inbox.":"Error: "+testEmailStatus.message}</div>}
+          <div style={{...sm,fontSize:9,color:MUTED,marginTop:8,lineHeight:1.7}}>Alert levels: Watch (minor increase) · Warning (significant increase, field visit recommended) · Critical (major disturbance, immediate action required)</div>
         </div>
 
+        <div style={{height:80}}/>
       </div>
     </div>
   );
@@ -1375,11 +1327,55 @@ export default function App(){
         @keyframes qspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
         @keyframes hspulse{0%{r:5;opacity:.9}100%{r:22;opacity:0}}
         @keyframes pulse{0%,100%{transform:scale(1);opacity:0.8}50%{transform:scale(1.4);opacity:0.4}}
-        *{box-sizing:border-box} button{transition:background .15s,border-color .15s,color .15s}
-        ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:${BG}} ::-webkit-scrollbar-thumb{background:rgba(0,200,240,.2);border-radius:2px}
-        select,input,textarea{transition:border-color .15s} select:focus,input:focus,textarea:focus{border-color:${CYAN}!important}
+        *{box-sizing:border-box} 
+        button{transition:background .15s,border-color .15s,color .15s;font-family:inherit;}
+        input,select,textarea{font-family:inherit;}
+        ::-webkit-scrollbar{width:4px} 
+        ::-webkit-scrollbar-track{background:#050E1C} 
+        ::-webkit-scrollbar-thumb{background:rgba(0,200,240,.2);border-radius:2px}
+        select:focus,input:focus,textarea:focus{outline:none;border-color:#00C8F0!important;}
 
-        /* MOBILE STYLES */
+        /* ── TYPOGRAPHY ── */
+        .qgif-heading{font-family:Georgia,'Times New Roman',serif;font-weight:normal;letter-spacing:-.01em;}
+        .qgif-label{font-family:'Courier New',Courier,monospace;letter-spacing:.08em;text-transform:uppercase;}
+        .qgif-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.6;}
+
+        /* ── TAB CONTENT — all tabs scroll properly on mobile ── */
+        .tab-content{width:100%;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+        .tab-inner{padding:16px;max-width:860px;}
+
+        /* ── CARDS ── */
+        .qgif-card{background:#0B1E35;border:1px solid rgba(0,200,240,0.1);border-radius:10px;padding:14px 16px;margin-bottom:12px;}
+        .qgif-card-highlight{background:#0B1E35;border:1px solid rgba(0,200,240,0.3);border-radius:10px;padding:14px 16px;margin-bottom:12px;}
+
+        /* ── BUTTONS ── */
+        .qgif-btn-primary{background:linear-gradient(135deg,#1A3A6B,#0099BB);color:white;border:none;border-radius:7px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:.01em;transition:opacity .15s;}
+        .qgif-btn-primary:hover{opacity:.9;}
+        .qgif-btn-primary:disabled{background:#4A6880;cursor:not-allowed;}
+        .qgif-btn-secondary{background:transparent;color:#00C8F0;border:1px solid rgba(0,200,240,0.4);border-radius:7px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;transition:background .15s;}
+        .qgif-btn-secondary:hover{background:rgba(0,200,240,0.08);}
+
+        /* ── FORM INPUTS ── */
+        .qgif-input{background:#08162A;border:1px solid rgba(0,200,240,0.15);border-radius:7px;padding:9px 12px;color:#D8E8FF;font-size:13px;width:100%;}
+        .qgif-input:focus{border-color:#00C8F0;}
+        .qgif-select{background:#08162A;border:1px solid rgba(0,200,240,0.15);border-radius:7px;padding:9px 12px;color:#D8E8FF;font-size:13px;width:100%;}
+
+        /* ── STAT BOXES ── */
+        .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:14px;}
+        .stat-box{background:#08162A;border-radius:8px;padding:10px 12px;text-align:center;}
+        .stat-label{font-family:'Courier New',monospace;font-size:9px;color:#4A6880;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;}
+        .stat-value{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:18px;font-weight:700;}
+
+        /* ── SECTION HEADERS ── */
+        .section-label{font-family:'Courier New',monospace;font-size:9px;color:#4A6880;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(0,200,240,0.08);}
+
+        /* ── ALERT BARS ── */
+        .alert-critical{border-left:3px solid #CC2222;background:rgba(204,34,34,0.06);}
+        .alert-warning{border-left:3px solid #CC6600;background:rgba(204,102,0,0.06);}
+        .alert-watch{border-left:3px solid #F5C842;background:rgba(245,200,66,0.06);}
+        .alert-improvement{border-left:3px solid #00875A;background:rgba(0,135,90,0.06);}
+
+        /* ── MOBILE ── */
         @media(max-width:768px){
           .desktop-sidebar{display:none!important}
           .desktop-right{display:none!important}
@@ -1387,32 +1383,27 @@ export default function App(){
           .tab-scroll{overflow-x:auto!important;flex-wrap:nowrap!important;justify-content:flex-start!important}
           .tab-scroll::-webkit-scrollbar{height:2px}
           .main-grid{grid-template-columns:1fr!important}
-          .topbar-time{display:none!important}
-          .topbar-role span:last-child{display:none}
+          .tab-inner{padding:12px;}
+          .stat-grid{grid-template-columns:repeat(3,1fr)!important;}
+          .hide-mobile{display:none!important;}
+          .qgif-btn-primary,.qgif-btn-secondary{padding:9px 14px;font-size:12px;}
         }
         @media(min-width:769px){
           .mobile-bottom{display:none!important}
         }
         .mobile-bottom{
-          display:none;
-          position:fixed;
-          bottom:0;left:0;right:0;
-          background:${PANEL};
-          border-top:1px solid ${BORDER};
-          z-index:2000;
-          flex-direction:column;
-          max-height:60vh;
-          overflow-y:auto;
+          display:none;position:fixed;bottom:0;left:0;right:0;
+          background:#08162A;border-top:1px solid rgba(0,200,240,0.15);
+          z-index:2000;flex-direction:column;max-height:62vh;overflow-y:auto;
+          -webkit-overflow-scrolling:touch;
         }
-        /* Make all tabs scroll on mobile */
         .tab-scroll{-webkit-overflow-scrolling:touch;}
-        /* Leaflet mobile touch fix */
         .leaflet-container{touch-action:pan-x pan-y!important;}
       `}</style>
 
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 12px",background:PANEL,borderBottom:`1px solid ${BORDER}`,gap:8}}>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-          <div style={{width:28,height:28,background:"linear-gradient(135deg,#00C8F0,#8B5CF6)",borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:BG}}>⚛</div>
+          <div style={{width:28,height:28,background:"linear-gradient(135deg,#00C8F0,#8B5CF6)",borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:BG}}>Q</div>
           <span style={{fontFamily:FH,fontSize:14,color:CYAN,whiteSpace:"nowrap"}}>QGIF</span>
         </div>
         <div className="tab-scroll" style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"center",flex:1,overflow:"hidden"}}>
