@@ -22,20 +22,20 @@ const SEV_BG={CRITICAL:"rgba(239,68,68,.1)",HIGH:"rgba(245,158,11,.1)",MEDIUM:"r
 const IMP_C={TRANSFORMATIONAL:CYAN,CRITICAL:RED,"MAJOR IMPROVEMENT":GREEN,POSITIVE:PURPLE,HIGH:AMBER,MEDIUM:"#EAB308"};
 
 const ROLES=[
-  {key:"government",label:"Government Official",icon:"🏛",color:CYAN,desc:"Policy briefings, budget decisions",prompts:["Which regions face the highest risk?","What is the cost of illegal mining?","Which issues need emergency action?","What reporting obligations is Ghana failing?"]},
-  {key:"epa",label:"EPA Officer",icon:"👮",color:AMBER,desc:"Enforcement, violations, evidence",prompts:["All active violations with GPS","Which miners risk permit revocation?","What evidence exists for prosecution?","Which water bodies exceed legal limits?"]},
-  {key:"miner",label:"Licensed Miner",icon:"⛏",color:"#F5C842",desc:"Compliance, ESG, licence protection",prompts:["What is our compliance score?","How do we compare to peer operators?","Which ESG data do we need?","What actions protect our licence?"]},
-  {key:"ngo",label:"NGO / Dev Bank",icon:"🌍",color:PURPLE,desc:"Impact, vulnerability, carbon MRV",prompts:["Which communities are most vulnerable?","What is the carbon credit potential?","How many SDGs are impacted?","Which intervention prevents most disease per dollar?"]},
-  {key:"doctor",label:"Doctor / Health",icon:"👩‍⚕️",color:GREEN,desc:"Disease prediction, clinical protocols",prompts:["Which communities will present mercury cases?","What tests should I order?","How many waterborne cases to expect?","What are the neurological risks for children?"]},
-  {key:"farmer",label:"Farmer",icon:"👨‍🌾",color:"#F5C842",desc:"Irrigation safety, crop advice, yield",prompts:["Is my irrigation water safe?","Which crops are safe to grow?","What should I plant this season?","How will rainfall change?"]},
+  {key:"government",label:"Government Official",icon:"GOV",color:CYAN,desc:"Policy briefings, budget decisions",prompts:["Which regions face the highest risk?","What is the cost of illegal mining?","Which issues need emergency action?","What reporting obligations is Ghana failing?"]},
+  {key:"epa",label:"EPA Officer",icon:"EPA",color:AMBER,desc:"Enforcement, violations, evidence",prompts:["All active violations with GPS","Which miners risk permit revocation?","What evidence exists for prosecution?","Which water bodies exceed legal limits?"]},
+  {key:"miner",label:"Licensed Miner",icon:"MIN",color:"#F5C842",desc:"Compliance, ESG, licence protection",prompts:["What is our compliance score?","How do we compare to peer operators?","Which ESG data do we need?","What actions protect our licence?"]},
+  {key:"ngo",label:"NGO / Dev Bank",icon:"NGO",color:PURPLE,desc:"Impact, vulnerability, carbon MRV",prompts:["Which communities are most vulnerable?","What is the carbon credit potential?","How many SDGs are impacted?","Which intervention prevents most disease per dollar?"]},
+  {key:"doctor",label:"Doctor / Health",icon:"MED",color:GREEN,desc:"Disease prediction, clinical protocols",prompts:["Which communities will present mercury cases?","What tests should I order?","How many waterborne cases to expect?","What are the neurological risks for children?"]},
+  {key:"farmer",label:"Farmer",icon:"AGR",color:"#F5C842",desc:"Irrigation safety, crop advice, yield",prompts:["Is my irrigation water safe?","Which crops are safe to grow?","What should I plant this season?","How will rainfall change?"]},
 ];
 
 const LAYERS=[
-  {key:"all",icon:"Q",label:"All Threats"},{key:"mining",icon:"⛏️",label:"Illegal Mining"},
-  {key:"health",icon:"🏥",label:"Public Health"},{key:"water",icon:"💧",label:"Water Security"},
-  {key:"food",icon:"🌾",label:"Food & Agriculture"},{key:"climate",icon:"🌡️",label:"Climate Risk"},
-  {key:"conflict",icon:"⚠️",label:"Conflict"},{key:"carbon",icon:"🌲",label:"Carbon & Forest"},
-  {key:"disease",icon:"🦠",label:"Disease"},{key:"economy",icon:"📊",label:"Economic Risk"},
+  {key:"all",icon:"Q",label:"All Threats"},{key:"mining",icon:"M",label:"Illegal Mining"},
+  {key:"health",icon:"H",label:"Public Health"},{key:"water",icon:"W",label:"Water Security"},
+  {key:"food",icon:"F",label:"Food & Agriculture"},{key:"climate",icon:"C",label:"Climate Risk"},
+  {key:"conflict",icon:"X",label:"Conflict"},{key:"carbon",icon:"T",label:"Carbon & Forest"},
+  {key:"disease",icon:"D",label:"Disease"},{key:"economy",icon:"E",label:"Economic Risk"},
 ];
 
 const REGIONS=[
@@ -48,10 +48,10 @@ const REGIONS=[
 ];
 
 const SCENARIOS=[
-  {key:"mining_doubles",label:"Mining Doubles",icon:"⛏️",desc:"What if illegal mining doubles?"},
-  {key:"river_cleaned",label:"River Cleanup",icon:"💧",desc:"What if we clean the river?"},
-  {key:"mining_banned",label:"Enforcement",icon:"👮",desc:"What if EPA eliminates illegal mining?"},
-  {key:"reforestation",label:"Reforestation",icon:"🌳",desc:"What if we restore 50,000 hectares?"},
+  {key:"mining_doubles",label:"Mining Doubles",icon:"Mining",desc:"What if illegal mining doubles?"},
+  {key:"river_cleaned",label:"River Cleanup",icon:"Water",desc:"What if we clean the river?"},
+  {key:"mining_banned",label:"Enforcement",icon:"EPA",desc:"What if EPA eliminates illegal mining?"},
+  {key:"reforestation",label:"Reforestation",icon:"Forest",desc:"What if we restore 50,000 hectares?"},
 ];
 
 
@@ -500,7 +500,7 @@ function RiskTab({activeRegion,setActiveRegion,riskData,riskLoading,runRisk}){
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
         {REGIONS.map(r=>(<button key={r.name} onClick={()=>{setActiveRegion(r.name);runRisk(r.name);}} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}10`:"transparent",color:activeRegion===r.name?CYAN:MUTED,cursor:"pointer",fontSize:12,fontFamily:FB}}>{r.name}</button>))}
       </div>
-      {!riskData&&!riskLoading&&<div style={{textAlign:"center",padding:"60px 20px"}}><div style={{fontSize:52,opacity:.12}}>🎯</div><div style={{fontFamily:FH,fontSize:16,color:"rgba(216,232,255,.22)",fontWeight:"normal",marginTop:12}}>Select a region</div></div>}
+      {!riskData&&!riskLoading&&<div style={{textAlign:"center",padding:"60px 20px"}}><div style={{fontSize:52,opacity:.12}}></div><div style={{fontFamily:FH,fontSize:16,color:"rgba(216,232,255,.22)",fontWeight:"normal",marginTop:12}}>Select a region</div></div>}
       {riskLoading&&<Spinner label="Running quantum risk scorer..."/>}
       {!riskLoading&&riskData&&!riskData._error&&(
         <div>
@@ -549,7 +549,7 @@ function DiseaseTab({activeRegion,setActiveRegion,diseaseData,diseaseLoading,run
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
         {REGIONS.map(r=>(<button key={r.name} onClick={()=>{setActiveRegion(r.name);runDisease(r.name);}} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}10`:"transparent",color:activeRegion===r.name?CYAN:MUTED,cursor:"pointer",fontSize:12,fontFamily:FB}}>{r.name}</button>))}
       </div>
-      {!activeRegion&&!diseaseData&&<div style={{textAlign:"center",padding:"60px 20px"}}><div style={{fontSize:52,opacity:.12}}>🧬</div><div style={{fontFamily:FH,fontSize:16,color:"rgba(216,232,255,.22)",fontWeight:"normal",marginTop:12}}>Select a region to run all 6 models</div></div>}
+      {!activeRegion&&!diseaseData&&<div style={{textAlign:"center",padding:"60px 20px"}}><div style={{fontSize:52,opacity:.12}}></div><div style={{fontFamily:FH,fontSize:16,color:"rgba(216,232,255,.22)",fontWeight:"normal",marginTop:12}}>Select a region to run all 6 models</div></div>}
       {diseaseLoading&&<Spinner label="Running 6 prediction models simultaneously..."/>}
       {!diseaseLoading&&diseaseData&&!diseaseData._error&&(
         <div>
@@ -564,40 +564,40 @@ function DiseaseTab({activeRegion,setActiveRegion,diseaseData,diseaseLoading,run
           </Card>
           {diseaseData.predictions?.waterborne_disease&&(
             <Card color={RED+"33"}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><span style={{fontSize:22}}>💧</span><div><div style={{fontFamily:FH,fontSize:15,color:TEXT}}>Waterborne Disease — Poisson Model</div></div></div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:3,height:36,background:"#0EA5E9",borderRadius:2,flexShrink:0}}></div><div><div style={{fontFamily:"Inter,'Segoe UI',system-ui,sans-serif",fontSize:14,fontWeight:600,color:TEXT,letterSpacing:"-.01em"}}>Waterborne Disease</div><div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginTop:2}}>Poisson Transmission Model</div></div></div>
               <MetricGrid items={[["OUTBREAK PROBABILITY",`${diseaseData.predictions.waterborne_disease.probability_pct}%`,RED,diseaseData.predictions.waterborne_disease.disease],["CASES/WEEK",diseaseData.predictions.waterborne_disease.expected_cases_week1?.toLocaleString(),AMBER],["DAYS TO OUTBREAK",diseaseData.predictions.waterborne_disease.days_to_outbreak,RED]]}/>
             </Card>
           )}
           {diseaseData.predictions?.mercury_neurological&&(
             <Card color={PURPLE+"33"}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><span style={{fontSize:22}}>🧠</span><div><div style={{fontFamily:FH,fontSize:15,color:TEXT}}>Mercury Neurological — WHO Bioaccumulation</div></div></div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:3,height:36,background:"#8B5CF6",borderRadius:2,flexShrink:0}}></div><div><div style={{fontFamily:"Inter,'Segoe UI',system-ui,sans-serif",fontSize:14,fontWeight:600,color:TEXT,letterSpacing:"-.01em"}}>Mercury Neurological Risk</div><div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginTop:2}}>WHO Bioaccumulation Model</div></div></div>
               <MetricGrid items={[["FISH MERCURY",`${diseaseData.predictions.mercury_neurological.fish_mercury_mgkg} mg/kg`,RED],["CHILDREN AT RISK",diseaseData.predictions.mercury_neurological.children_at_risk?.toLocaleString(),RED],["CHILD EXPOSURE",`${diseaseData.predictions.mercury_neurological.child_exposure_ratio}x`,RED]]}/>
               <InfoBox label="SEVERITY" value={diseaseData.predictions.mercury_neurological.severity} color={RED}/>
             </Card>
           )}
           {diseaseData.predictions?.pandemic_emergence&&(
             <Card color={AMBER+"33"}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><span style={{fontSize:22}}>🦠</span><div><div style={{fontFamily:FH,fontSize:15,color:TEXT}}>Pandemic Emergence — EcoHealth Model</div></div></div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:3,height:36,background:"#EF4444",borderRadius:2,flexShrink:0}}></div><div><div style={{fontFamily:"Inter,'Segoe UI',system-ui,sans-serif",fontSize:14,fontWeight:600,color:TEXT,letterSpacing:"-.01em"}}>Pandemic Emergence</div><div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginTop:2}}>EcoHealth Spillover Model</div></div></div>
               <MetricGrid items={[["SPILLOVER PROBABILITY",`${diseaseData.predictions.pandemic_emergence.spillover_probability_12m}%`,AMBER],["EPIDEMIC RISK",`${diseaseData.predictions.pandemic_emergence.epidemic_amplification_prob}%`,RED],["PATHOGEN TYPE",diseaseData.predictions.pandemic_emergence.pathogen_type?.split(" ")[0],AMBER]]}/>
               <InfoBox label="LEAD TIME" value={diseaseData.predictions.pandemic_emergence.lead_time_advantage} color={GREEN}/>
             </Card>
           )}
           {diseaseData.predictions?.food_security&&(
             <Card color={GREEN+"33"}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><span style={{fontSize:22}}>🌾</span><div><div style={{fontFamily:FH,fontSize:15,color:TEXT}}>Food Security — IPC/FEWS Model</div></div></div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:3,height:36,background:"#F59E0B",borderRadius:2,flexShrink:0}}></div><div><div style={{fontFamily:"Inter,'Segoe UI',system-ui,sans-serif",fontSize:14,fontWeight:600,color:TEXT,letterSpacing:"-.01em"}}>Food Security</div><div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginTop:2}}>IPC / FEWS NET Framework</div></div></div>
               <MetricGrid items={[["CROP STRESS",diseaseData.predictions.food_security.crop_stress_index,AMBER],["YIELD LOSS",`${diseaseData.predictions.food_security.yield_reduction_pct}%`,RED],["PEOPLE AT RISK",diseaseData.predictions.food_security.people_at_risk?.toLocaleString(),AMBER]]}/>
             </Card>
           )}
           {diseaseData.predictions?.ecosystem_tipping_point&&(
             <Card color={GREEN+"33"}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><span style={{fontSize:22}}>🌿</span><div><div style={{fontFamily:FH,fontSize:15,color:TEXT}}>Ecosystem Tipping Point — Scheffer Theory</div></div></div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:3,height:36,background:"#10B981",borderRadius:2,flexShrink:0}}></div><div><div style={{fontFamily:"Inter,'Segoe UI',system-ui,sans-serif",fontSize:14,fontWeight:600,color:TEXT,letterSpacing:"-.01em"}}>Ecosystem Tipping Point</div><div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginTop:2}}>Scheffer Critical Transition Theory</div></div></div>
               <MetricGrid items={[["RESILIENCE",diseaseData.predictions.ecosystem_tipping_point.resilience_index,GREEN],["YEARS LEFT",diseaseData.predictions.ecosystem_tipping_point.years_to_tipping_point,RED],["SERVICES VALUE",diseaseData.predictions.ecosystem_tipping_point.ecosystem_services_value,CYAN]]}/>
               <InfoBox label="INTERVENTION WINDOW" value={diseaseData.predictions.ecosystem_tipping_point.intervention_window} color={RED}/>
             </Card>
           )}
           {diseaseData.predictions?.conflict&&(
             <Card color={AMBER+"33"}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><span style={{fontSize:22}}>⚠️</span><div><div style={{fontFamily:FH,fontSize:15,color:TEXT}}>Conflict Prediction — PRIO Model</div></div></div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:3,height:36,background:"#EAB308",borderRadius:2,flexShrink:0}}></div><div><div style={{fontFamily:"Inter,'Segoe UI',system-ui,sans-serif",fontSize:14,fontWeight:600,color:TEXT,letterSpacing:"-.01em"}}>Conflict Prediction</div><div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginTop:2}}>PRIO Water-Conflict Model</div></div></div>
               <MetricGrid items={[["CONFLICT PROBABILITY",`${diseaseData.predictions.conflict.conflict_probability_pct}%`,AMBER],["FLASHPOINTS",diseaseData.predictions.conflict.flashpoint_communities,RED],["MONTHS TO ESCALATION",diseaseData.predictions.conflict.months_to_escalation,AMBER]]}/>
             </Card>
           )}
@@ -800,7 +800,7 @@ function DamTab({damData,damLoading,runDam}){
           </Card>
           <Card color={damData.risk_level==="CRITICAL"?RED+"33":GREEN+"22"}>
             <Label text="IMMEDIATE ACTIONS" color={damData.risk_level==="CRITICAL"?RED:GREEN}/>
-            <BulletList items={damData.immediate_actions} color={damData.risk_level==="CRITICAL"?RED:GREEN} icon={damData.risk_level==="CRITICAL"?"🚨":"✓"}/>
+            <BulletList items={damData.immediate_actions} color={damData.risk_level==="CRITICAL"?RED:GREEN} icon={damData.risk_level==="CRITICAL"?"!":"✓"}/>
           </Card>
         </div>
       )}
@@ -996,7 +996,7 @@ function CriminalTab({criminalData,criminalLoading,runCriminal}){
           </Card>
           <Card color={RED+"33"}>
             <Label text="INTERPOL TRIGGERS" color={RED}/>
-            <BulletList items={criminalData.interpol_triggers} color={RED} icon="🚨"/>
+            <BulletList items={criminalData.interpol_triggers} color={RED} icon="!"/>
           </Card>
           <Card>
             <Label text="ENFORCEMENT PRIORITIES"/>
@@ -1159,7 +1159,7 @@ function TimelineTab({timelineData,timelineLoading,runTimeline,activeRegion}){
 
         {!timelineLoading&&!timelineData&&(
           <div style={{textAlign:"center",padding:"80px 20px"}}>
-            <div style={{width:48,height:48,borderRadius:8,background:`${CYAN}12`,border:`1px solid ${CYAN}22`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontSize:20}}>📅</div>
+            <div style={{width:48,height:48,borderRadius:8,background:`${CYAN}12`,border:`1px solid ${CYAN}22`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontSize:20}}></div>
             <div style={{...ss,fontSize:15,fontWeight:600,color:TEXT,marginBottom:6}}>Historical Analysis</div>
             <div style={{...ss,fontSize:13,color:MUTED,lineHeight:1.6,maxWidth:400,margin:"0 auto"}}>
               Select a region and run the analysis to see how vegetation, forest cover, and mining activity have changed year by year from 2020 to present.
@@ -1773,7 +1773,7 @@ export default function App(){
 
                     {/* Water Contamination */}
                     <div style={{background:P2,borderRadius:7,padding:"8px 10px",marginBottom:8}}>
-                      <div style={{fontFamily:FM,fontSize:8,color:CYAN,marginBottom:4,letterSpacing:".06em"}}>💧 WATER CONTAMINATION PROXY</div>
+                      <div style={{fontFamily:FM,fontSize:8,color:CYAN,marginBottom:4,letterSpacing:".06em"}}>WATER CONTAMINATION PROXY</div>
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:6}}>
                         <div>
                           <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>Turbidity proxy</div>
@@ -1793,7 +1793,7 @@ export default function App(){
 
                     {/* Health Risk */}
                     <div style={{background:P2,borderRadius:7,padding:"8px 10px",marginBottom:8}}>
-                      <div style={{fontFamily:FM,fontSize:8,color:GREEN,marginBottom:4,letterSpacing:".06em"}}>🏥 HEALTH RISK FROM SATELLITE</div>
+                      <div style={{fontFamily:FM,fontSize:8,color:GREEN,marginBottom:4,letterSpacing:".06em"}}> HEALTH RISK FROM SATELLITE</div>
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
                         <div>
                           <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>Outbreak probability</div>
@@ -1835,7 +1835,7 @@ export default function App(){
             {loading&&<Spinner label={"Analysing "+(region||"region")+"..."}/>}
             {!loading&&!prediction&&(
               <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:250,gap:12,textAlign:"center",padding:16}}>
-                <div style={{fontSize:40,opacity:.15}}>🗺️</div>
+                <div style={{fontSize:40,opacity:.15}}>️</div>
                 <div style={{fontFamily:FH,fontSize:16,color:"rgba(216,232,255,.3)",fontWeight:"normal"}}>Select a region</div>
               </div>
             )}
@@ -1864,7 +1864,7 @@ export default function App(){
                 <Label text="RECOMMENDED ACTIONS"/>
                 {(prediction.immediateActions||[]).map((a,i)=>(
                   <div key={i} style={{padding:"7px 10px",borderRadius:6,border:`1px solid ${BORDER}`,background:P2,color:TEXT,fontSize:12,fontFamily:FB,marginBottom:5,display:"flex",alignItems:"flex-start",gap:8}}>
-                    <span>{["🔴","🟡","🟢"][i]}</span>{a}
+                    <span>{["","",""][i]}</span>{a}
                   </div>
                 ))}
               </div>
