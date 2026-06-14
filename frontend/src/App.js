@@ -309,7 +309,10 @@ function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSe
       <div style={{position:"absolute",top:42,left:0,right:0,bottom:36}}>
         <MapContainer
           center={mapCenter?[mapCenter[0],mapCenter[1]]:[7.9465,-1.0232]}
-          zoom={mapCenter?mapCenter[2]:7}
+          zoom={mapCenter?mapCenter[2]:window.innerWidth<769?7:7}
+          minZoom={6}
+          maxZoom={19}
+          minZoom={5}
           style={{width:"100%",height:"100%"}}
           zoomControl={true}
           ref={mapRef}
@@ -1401,25 +1404,32 @@ export default function App(){
         .leaflet-container{touch-action:pan-x pan-y!important;}
       `}</style>
 
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 12px",background:PANEL,borderBottom:`1px solid ${BORDER}`,gap:8}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-          <div style={{width:28,height:28,background:"linear-gradient(135deg,#00C8F0,#8B5CF6)",borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:BG}}>Q</div>
-          <span style={{fontFamily:FH,fontSize:14,color:CYAN,whiteSpace:"nowrap"}}>QGIF</span>
+      {/* TOPBAR */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 10px",background:PANEL,borderBottom:`1px solid ${BORDER}`,height:46,gap:6}}>
+        {/* Logo */}
+        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+          <div style={{width:26,height:26,background:"linear-gradient(135deg,#00C8F0,#8B5CF6)",borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:BG}}>Q</div>
+          <span style={{fontFamily:"'Courier New',monospace",fontSize:13,color:CYAN,whiteSpace:"nowrap",letterSpacing:".05em"}}>QGIF</span>
         </div>
-        <div className="tab-scroll" style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"center",flex:1,overflow:"hidden"}}>
+        {/* Tabs — scrollable */}
+        <div className="tab-scroll" style={{display:"flex",gap:2,flex:1,overflow:"auto",padding:"0 4px"}}>
           {TABS.map(tab=>(
-            <button key={tab} onClick={()=>handleTabChange(tab)} style={{padding:"4px 9px",borderRadius:5,fontFamily:FB,fontSize:10,cursor:"pointer",border:`1px solid ${activeTab===tab?CYAN:BORDER2}`,background:activeTab===tab?`${CYAN}10`:"transparent",color:activeTab===tab?CYAN:MUTED,whiteSpace:"nowrap",flexShrink:0}}>{tab}</button>
+            <button key={tab} onClick={()=>handleTabChange(tab)}
+              style={{padding:"5px 10px",borderRadius:5,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:11,cursor:"pointer",border:`1px solid ${activeTab===tab?CYAN:BORDER2}`,background:activeTab===tab?`${CYAN}14`:"transparent",color:activeTab===tab?CYAN:MUTED,whiteSpace:"nowrap",flexShrink:0,fontWeight:activeTab===tab?600:400}}>
+              {tab}
+            </button>
           ))}
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-          <button onClick={()=>setShowRoleModal(true)} style={{padding:"4px 10px",borderRadius:6,border:`1px solid ${BORDER}`,background:`${CYAN}08`,color:CYAN,fontSize:11,fontFamily:FB,cursor:"pointer",whiteSpace:"nowrap"}}>{role.icon} {role.label}</button>
-          <span style={{fontFamily:FM,fontSize:9,color:GREEN,whiteSpace:"nowrap"}}>
-            <span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block",marginRight:4,animation:"blink 1.8s ease-in-out infinite"}}/>{time}
+        {/* Role + time */}
+        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+          <button onClick={()=>setShowRoleModal(true)} style={{padding:"4px 8px",borderRadius:5,border:`1px solid ${BORDER}`,background:`${CYAN}08`,color:CYAN,fontSize:10,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{role.icon} <span className="hide-mobile">{role.label}</span></button>
+          <span className="hide-mobile" style={{fontFamily:"'Courier New',monospace",fontSize:9,color:GREEN,whiteSpace:"nowrap"}}>
+            <span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block",marginRight:3,animation:"blink 1.8s ease-in-out infinite"}}/>{time}
           </span>
         </div>
       </div>
 
-      <div className="main-grid" style={{display:"grid",gridTemplateColumns:"180px 1fr 300px",height:"calc(100vh - 52px)",overflow:"hidden"}}>
+      <div className="main-grid" style={{display:"grid",gridTemplateColumns:"180px 1fr 300px",height:"calc(100vh - 46px)",overflow:"hidden"}}>
         <div className="desktop-sidebar" style={{background:PANEL,borderRight:`1px solid ${BORDER}`,overflowY:"auto"}}>
           <div style={{padding:"10px 8px",borderBottom:`1px solid ${BORDER2}`}}>
             <Label text="INTELLIGENCE LAYERS"/>
@@ -1634,78 +1644,49 @@ export default function App(){
         </div>
       </div>
 
-      {/* MOBILE BOTTOM PANEL — shown only on small screens */}
+      {/* MOBILE BOTTOM PANEL — Map tab only */}
+      {activeTab==="Map"&&(
       <div className="mobile-bottom">
-
-        {/* Search bar on mobile */}
+        {/* Search bar */}
         <div style={{padding:"8px 10px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:6}}>
-          <input
-            value={searchQuery}
-            onChange={e=>setSearchQuery(e.target.value)}
-            placeholder="🔍 Search town or region..."
-            style={{flex:1,background:P2,border:`1px solid ${CYAN}33`,borderRadius:6,padding:"6px 10px",color:TEXT,fontSize:12,outline:"none",fontFamily:FB}}
-          />
-          <button
-            onClick={()=>{
-              const q=searchQuery.toLowerCase();
-              const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));
-              const reg=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));
-              if(town){setMapCenter([town.lat,town.lng,13]);handleCoordClick(town.lat,town.lng,town.name);}
-              else if(reg){setMapCenter([reg[1].lat,reg[1].lng,10]);handleRegionClick(reg[0]);}
-            }}
-            style={{background:CYAN,border:"none",borderRadius:6,padding:"6px 12px",color:BG,fontSize:12,fontWeight:700,cursor:"pointer"}}>Go</button>
+          <input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search town or region..."
+            style={{flex:1,background:P2,border:`1px solid ${CYAN}33`,borderRadius:6,padding:"7px 10px",color:TEXT,fontSize:13,outline:"none",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}/>
+          <button onClick={()=>{const q=searchQuery.toLowerCase();const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));const reg=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));if(town){setMapCenter([town.lat,town.lng,13]);handleCoordClick(town.lat,town.lng,town.name);}else if(reg){setMapCenter([reg[1].lat,reg[1].lng,10]);handleRegionClick(reg[0]);}}}
+            style={{background:CYAN,border:"none",borderRadius:6,padding:"7px 14px",color:BG,fontSize:13,fontWeight:700,cursor:"pointer"}}>Go</button>
         </div>
 
-        {/* Region quick-select */}
+        {/* Region buttons */}
         <div style={{padding:"8px 10px",borderBottom:`1px solid ${BORDER}`}}>
-          <div style={{fontFamily:FM,fontSize:9,color:MUTED,marginBottom:5,letterSpacing:".06em"}}>TAP REGION FOR INTELLIGENCE</div>
+          <div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:MUTED,marginBottom:5,letterSpacing:".06em",textTransform:"uppercase"}}>Tap Region</div>
           <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
             {REGIONS.map(r=>(
               <button key={r.name} onClick={()=>handleRegionClick(r.name)}
-                style={{padding:"4px 8px",borderRadius:5,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}10`:"transparent",color:activeRegion===r.name?CYAN:MUTED,fontSize:10,fontFamily:FB,cursor:"pointer"}}>
+                style={{padding:"5px 9px",borderRadius:5,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}15`:"transparent",color:activeRegion===r.name?CYAN:MUTED,fontSize:11,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",cursor:"pointer"}}>
                 {r.name.replace(' Region','')}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Live Detection Results on mobile */}
-        {liveDetectLoading&&(
-          <div style={{padding:"12px",display:"flex",alignItems:"center",gap:8}}>
-            <span style={{width:6,height:6,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/>
-            <span style={{fontFamily:FB,fontSize:12,color:MUTED}}>Running satellite detection... (20-30 sec)</span>
-          </div>
-        )}
+        {/* Live detection */}
+        {liveDetectLoading&&<div style={{padding:"12px 10px",display:"flex",alignItems:"center",gap:8}}><span style={{width:6,height:6,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/><span style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:12,color:MUTED}}>Running satellite detection... 20-30 seconds</span></div>}
         {!liveDetectLoading&&liveDetect&&!liveDetect._error&&(
           <div style={{padding:"10px 12px",borderBottom:`1px solid ${BORDER}`}}>
-            <div style={{fontFamily:FM,fontSize:9,color:PURPLE,marginBottom:8,display:"flex",alignItems:"center",gap:5}}>
-              <span style={{width:5,height:5,borderRadius:"50%",background:PURPLE,display:"inline-block"}}/>
-              LIVE DETECTION · {liveDetect.imagery?.current_image_date} · {liveDetect.location}
-            </div>
-            {/* 3 key metrics */}
+            <div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:PURPLE,marginBottom:8,letterSpacing:".06em"}}>LIVE DETECTION · {liveDetect.imagery?.current_image_date} · {liveDetect.location}</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:8}}>
-              <div style={{background:P2,borderRadius:6,padding:"7px 8px",textAlign:"center"}}>
-                <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:2}}>MINING</div>
-                <div style={{fontFamily:FB,fontSize:16,fontWeight:700,color:liveDetect.mining_detection?.score>70?RED:liveDetect.mining_detection?.score>40?AMBER:GREEN}}>{liveDetect.mining_detection?.score}</div>
-                <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>/100</div>
-              </div>
-              <div style={{background:P2,borderRadius:6,padding:"7px 8px",textAlign:"center"}}>
-                <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:2}}>MERCURY</div>
-                <div style={{fontFamily:FB,fontSize:16,fontWeight:700,color:liveDetect.water_contamination?.mercury_proxy_mgl>0.01?RED:GREEN}}>{liveDetect.water_contamination?.mercury_proxy_mgl}</div>
-                <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>mg/L</div>
-              </div>
-              <div style={{background:P2,borderRadius:6,padding:"7px 8px",textAlign:"center"}}>
-                <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:2}}>OUTBREAK</div>
-                <div style={{fontFamily:FB,fontSize:16,fontWeight:700,color:liveDetect.health_risk?.outbreak_probability_30days_pct>50?RED:AMBER}}>{liveDetect.health_risk?.outbreak_probability_30days_pct}%</div>
-                <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>risk</div>
-              </div>
+              {[["Mining Score",liveDetect.mining_detection?.score,"/100",liveDetect.mining_detection?.score>70?RED:liveDetect.mining_detection?.score>40?AMBER:GREEN],["Mercury Proxy",liveDetect.water_contamination?.mercury_proxy_mgl,"mg/L",liveDetect.water_contamination?.mercury_proxy_mgl>0.01?RED:GREEN],["Outbreak Risk",liveDetect.health_risk?.outbreak_probability_30days_pct,"%",liveDetect.health_risk?.outbreak_probability_30days_pct>50?RED:AMBER]].map(([label,val,unit,col])=>(
+                <div key={label} style={{background:P2,borderRadius:6,padding:"7px 8px",textAlign:"center"}}>
+                  <div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED,marginBottom:2}}>{label}</div>
+                  <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:16,fontWeight:700,color:col}}>{val}</div>
+                  <div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED}}>{unit}</div>
+                </div>
+              ))}
             </div>
-            <div style={{fontFamily:FB,fontSize:11,color:TEXT2,lineHeight:1.5,marginBottom:6}}>{liveDetect.mining_detection?.classification}</div>
-            <div style={{fontFamily:FM,fontSize:9,color:AMBER}}>⚠ Mercury proxy from satellite — not a direct measurement</div>
+            <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:11,color:TEXT2,lineHeight:1.5}}>{liveDetect.mining_detection?.classification}</div>
           </div>
         )}
 
-        {/* Prediction output on mobile */}
+        {/* Prediction */}
         {loading&&<div style={{padding:12}}><Spinner label="Analysing..."/></div>}
         {!loading&&prediction&&!prediction._error&&(
           <div style={{padding:"10px 12px"}}>
@@ -1713,24 +1694,42 @@ export default function App(){
               <Tag label={prediction.severity} color={SEV_C[prediction.severity]} bg={SEV_BG[prediction.severity]}/>
               <Tag label={prediction.confidence} color={CYAN}/>
             </div>
-            <div style={{fontFamily:FH,fontSize:14,color:TEXT,marginBottom:6,fontWeight:"normal"}}>{prediction.title}</div>
-            <div style={{fontFamily:FB,fontSize:11,color:TEXT,lineHeight:1.7,padding:"8px 10px",background:P2,borderRadius:7,borderLeft:`3px solid ${CYAN}`,marginBottom:8}}>{prediction.analysis}</div>
+            <div style={{fontFamily:"Georgia,'Times New Roman',serif",fontSize:14,color:TEXT,marginBottom:6,fontWeight:"normal",lineHeight:1.4}}>{prediction.title}</div>
+            <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:11,color:TEXT,lineHeight:1.7,padding:"8px 10px",background:P2,borderRadius:7,borderLeft:`3px solid ${CYAN}`,marginBottom:8}}>{prediction.analysis}</div>
             {(prediction.findings||[]).slice(0,2).map((f,i)=>(
               <div key={i} style={{display:"flex",gap:8,padding:"6px 10px",background:P2,borderRadius:6,marginBottom:5}}>
                 <div style={{width:6,height:6,borderRadius:"50%",flexShrink:0,marginTop:4,background:{critical:RED,high:AMBER,medium:"#F5C842",low:GREEN}[f.severity]||CYAN}}/>
-                <div style={{fontFamily:FB,fontSize:11,color:TEXT,lineHeight:1.6}}>{f.text}</div>
+                <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:11,color:TEXT,lineHeight:1.6}}>{f.text}</div>
               </div>
             ))}
           </div>
         )}
         {!loading&&!prediction&&!liveDetect&&(
-          <div style={{padding:"16px 12px",textAlign:"center"}}>
-            <div style={{fontSize:28,opacity:.2,marginBottom:8}}>🛰️</div>
-            <div style={{fontFamily:FB,fontSize:12,color:MUTED}}>Tap any region above or tap anywhere on the map</div>
-            <div style={{fontFamily:FM,fontSize:10,color:MUTED,marginTop:4}}>Live satellite analysis will appear here</div>
+          <div style={{padding:"20px 12px",textAlign:"center"}}>
+            <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:13,color:MUTED,marginBottom:4}}>Tap a region or anywhere on the map</div>
+            <div style={{fontFamily:"'Courier New',monospace",fontSize:10,color:MUTED}}>Live satellite analysis will appear here</div>
           </div>
         )}
+        <div style={{height:20}}/>
       </div>
+      )}
+
+      {/* MOBILE NON-MAP TABS — full screen content */}
+      {activeTab!=="Map"&&(
+      <div className="mobile-fullscreen-tab">
+        <style>{`@media(max-width:768px){.mobile-fullscreen-tab{display:flex!important;position:fixed;top:46px;left:0;right:0;bottom:0;z-index:500;background:#050E1C;overflow-y:auto;-webkit-overflow-scrolling:touch;flex-direction:column;}} @media(min-width:769px){.mobile-fullscreen-tab{display:none!important;}}`}</style>
+        {activeTab==="Monitoring"&&<MonitoringTab monitorData={monitorData} monitorLoading={monitorLoading} runMonitor={runMonitor} dashData={dashData} dashLoading={dashLoading} loadDash={loadDash}/>}
+        {activeTab==="Quantum Optimizer"&&<QuantumTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} qData={qData} qLoading={qLoading} qType={qType} setQType={setQType} runQuantum={runQuantum}/>}
+        {activeTab==="Scenario Simulator"&&<ScenarioTab scData={scData} scLoading={scLoading} scScenario={scScenario} setScScenario={setScScenario} scIntensity={scIntensity} setScIntensity={setScIntensity} scRegion={scRegion} setScRegion={setScRegion} runScenario={runScenario}/>}
+        {activeTab==="Risk Matrix"&&<RiskTab riskData={riskData} riskLoading={riskLoading} runRisk={runRisk} activeRegion={activeRegion} setActiveRegion={setActiveRegion}/>}
+        {activeTab==="Disease Intelligence"&&<DiseaseTab diseaseData={diseaseData} diseaseLoading={diseaseLoading} runDisease={runDisease} activeRegion={activeRegion} setActiveRegion={setActiveRegion}/>}
+        {activeTab==="Digital Lawyer"&&<LawyerTab lawyerData={lawyerData} lawyerLoading={lawyerLoading} runLawyer={runLawyer}/>}
+        {activeTab==="Dam Risk"&&<DamTab damData={damData} damLoading={damLoading} runDam={runDam}/>}
+        {activeTab==="Crop Insurance"&&<InsuranceTab insuranceData={insuranceData} insuranceLoading={insuranceLoading} runInsurance={runInsurance}/>}
+        {activeTab==="Air Quality"&&<AirTab airData={airData} airLoading={airLoading} runAir={runAir}/>}
+        {activeTab==="Criminal Network"&&<CriminalTab criminalData={criminalData} criminalLoading={criminalLoading} runCriminal={runCriminal}/>}
+      </div>
+      )}
 
 
       {showRoleModal&&(
