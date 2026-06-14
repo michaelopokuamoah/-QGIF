@@ -1753,6 +1753,12 @@ async function runFullMonitoringCheck() {
   saveMonitoringHistory(history);
   saveAlerts(alertsData);
 
+  // Send email alerts to subscribers
+  if (newAlerts.length > 0) {
+    console.log(`  📧 Sending alerts to subscribers...`);
+    await sendAlertsToSubscribers(newAlerts);
+  }
+
   const summary = {
     status: 'COMPLETED',
     checked_at: checkDate,
@@ -1986,6 +1992,227 @@ setTimeout(() => {
     }, 5000);
   }
 }, 10000);
+
+// ============================================================
+// EMAIL ALERT SYSTEM — Nodemailer + Gmail
+// ============================================================
+
+const nodemailer = require('nodemailer');
+
+function createTransporter() {
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
+    console.log('  ⚠ Email alerts disabled — GMAIL_USER or GMAIL_PASS not set');
+    return null;
+  }
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_PASS,
+    },
+  });
+}
+
+function getSeverityEmoji(severity) {
+  return { CRITICAL: '🔴', WARNING: '🟠', WATCH: '🟡', IMPROVEMENT: '🟢', INFO: '🔵' }[severity] || '⚪';
+}
+
+async function sendAlertEmail(subscriber, alerts) {
+  const transporter = createTransporter();
+  if (!transporter) return false;
+
+  const criticalAlerts = alerts.filter(a => a.severity === 'CRITICAL');
+  const warningAlerts = alerts.filter(a => a.severity === 'WARNING');
+  const watchAlerts = alerts.filter(a => a.severity === 'WATCH');
+  const improvementAlerts = alerts.filter(a => a.severity === 'IMPROVEMENT');
+
+  const subject = criticalAlerts.length > 0
+    ? `🔴 CRITICAL — QGIF Alert: New illegal mining detected in ${criticalAlerts[0].region}`
+    : warningAlerts.length > 0
+    ? `🟠 WARNING — QGIF Alert: Environmental disturbance in ${warningAlerts[0].region}`
+    : `🟡 QGIF Monitoring Update — ${alerts.length} region(s) flagged`;
+
+  const alertRows = alerts.map(a => `
+    <tr>
+      <td style="padding:10px;border-bottom:1px solid #eee;">
+        <strong style="color:${a.severity==='CRITICAL'?'#CC2222':a.severity==='WARNING'?'#CC6600':a.severity==='IMPROVEMENT'?'#00875A':'#333'}">${getSeverityEmoji(a.severity)} ${a.severity}</strong>
+      </td>
+      <td style="padding:10px;border-bottom:1px solid #eee;"><strong>${a.region}</strong></td>
+      <td style="padding:10px;border-bottom:1px solid #eee;">${a.previous_gap} → ${a.current_gap} (${a.gap_change > 0 ? '+' : ''}${a.gap_change})</td>
+      <td style="padding:10px;border-bottom:1px solid #eee;">${a.previous_mining_score} → ${a.current_mining_score}</td>
+      <td style="padding:10px;border-bottom:1px solid #eee;font-size:12px;">${a.satellite_date}</td>
+    </tr>
+  `).join('');
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f7fa;font-family:Arial,sans-serif;">
+  <div style="max-width:680px;margin:0 auto;background:white;border-radius:12px;overflow:hidden;margin-top:20px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#1A3A6B,#0099BB);padding:28px 32px;text-align:center;">
+      <div style="font-size:36px;margin-bottom:8px;">⚛</div>
+      <h1 style="color:white;margin:0;font-size:22px;letter-spacing:1px;">QGIF MONITORING ALERT</h1>
+      <p style="color:rgba(255,255,255,0.8);margin:8px 0 0;font-size:13px;">Quantum Geospatial Intelligence Framework — Ghana</p>
+    </div>
+
+    <!-- Alert Summary -->
+    <div style="padding:24px 32px;background:#f8f9ff;border-bottom:1px solid #e0e8ff;">
+      <p style="margin:0;font-size:15px;color:#333;">Dear ${subscriber.name || 'QGIF Subscriber'},</p>
+      <p style="margin:12px 0 0;font-size:14px;color:#555;line-height:1.7;">
+        The QGIF automated satellite monitoring system completed its scheduled check on <strong>${new Date().toISOString().split('T')[0]}</strong> 
+        and detected <strong>${alerts.length} environmental change(s)</strong> across Ghana's regions that meet your alert threshold.
+      </p>
+      ${criticalAlerts.length > 0 ? `
+      <div style="background:#FDE8E8;border:1px solid #CC2222;border-radius:8px;padding:12px 16px;margin-top:16px;">
+        <strong style="color:#CC2222;">🔴 ${criticalAlerts.length} CRITICAL alert(s) require immediate attention</strong>
+        <p style="margin:6px 0 0;color:#CC2222;font-size:13px;">${criticalAlerts.map(a => a.region).join(', ')} — Significant new land disturbance detected. EPA field verification recommended immediately.</p>
+      </div>` : ''}
+      ${warningAlerts.length > 0 ? `
+      <div style="background:#FFF3E0;border:1px solid #CC6600;border-radius:8px;padding:12px 16px;margin-top:12px;">
+        <strong style="color:#CC6600;">🟠 ${warningAlerts.length} WARNING alert(s) — EPA field visit recommended within 7 days</strong>
+      </div>` : ''}
+    </div>
+
+    <!-- Alert Table -->
+    <div style="padding:24px 32px;">
+      <h2 style="color:#1A3A6B;font-size:16px;margin:0 0 16px;">Detailed Alert Report</h2>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="background:#1A3A6B;color:white;">
+            <th style="padding:10px;text-align:left;">Severity</th>
+            <th style="padding:10px;text-align:left;">Region</th>
+            <th style="padding:10px;text-align:left;">Degradation Gap</th>
+            <th style="padding:10px;text-align:left;">Mining Score</th>
+            <th style="padding:10px;text-align:left;">Satellite Date</th>
+          </tr>
+        </thead>
+        <tbody>${alertRows}</tbody>
+      </table>
+    </div>
+
+    <!-- Alert Messages -->
+    <div style="padding:0 32px 24px;">
+      <h2 style="color:#1A3A6B;font-size:16px;margin:0 0 16px;">What The Satellite Found</h2>
+      ${alerts.map(a => `
+      <div style="background:#f8f9ff;border-left:4px solid ${a.severity==='CRITICAL'?'#CC2222':a.severity==='WARNING'?'#CC6600':a.severity==='IMPROVEMENT'?'#00875A':'#0099BB'};border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:12px;">
+        <div style="font-weight:bold;color:#333;margin-bottom:6px;">${getSeverityEmoji(a.severity)} ${a.region}</div>
+        <div style="font-size:13px;color:#555;line-height:1.6;margin-bottom:8px;">${a.message}</div>
+        <div style="font-size:12px;color:#0099BB;font-weight:bold;">→ ${a.recommended_action}</div>
+      </div>`).join('')}
+    </div>
+
+    <!-- Methodology Note -->
+    <div style="padding:16px 32px;background:#f0f4ff;border-top:1px solid #e0e8ff;">
+      <p style="margin:0;font-size:12px;color:#666;line-height:1.7;">
+        <strong>Data Source:</strong> ESA Sentinel-2 satellite imagery via Google Earth Engine (Project: quantum-geospatial). 
+        All values calculated from live spectral indices (NDVI, BSI, MNDWI, Iron Oxide Ratio, Clay Mineral Ratio). 
+        Mercury and contamination values are satellite-derived proxies, not direct chemical measurements. 
+        Field verification recommended for all alerts above WATCH level.
+      </p>
+    </div>
+
+    <!-- CTA -->
+    <div style="padding:20px 32px;text-align:center;background:white;">
+      <a href="https://qgif.vercel.app" style="display:inline-block;background:linear-gradient(135deg,#1A3A6B,#0099BB);color:white;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:bold;font-size:14px;">
+        View Full Analysis on QGIF →
+      </a>
+      <p style="margin:16px 0 0;font-size:11px;color:#999;">
+        You are receiving this because you registered at qgif.vercel.app.<br>
+        Organisation: ${subscriber.organisation || 'Not specified'} | Threshold: ${subscriber.severity_threshold || 'WARNING'}+<br>
+        Next scheduled check: 30 days from today.
+      </p>
+    </div>
+
+  </div>
+</body>
+</html>`;
+
+  try {
+    await transporter.sendMail({
+      from: `"QGIF Monitoring System" <${process.env.GMAIL_USER}>`,
+      to: subscriber.email,
+      subject,
+      html,
+    });
+    console.log(`  ✓ Alert email sent to ${subscriber.email}`);
+    return true;
+  } catch (e) {
+    console.log(`  ⚠ Failed to send email to ${subscriber.email}:`, e.message);
+    return false;
+  }
+}
+
+async function sendAlertsToSubscribers(newAlerts) {
+  if (!newAlerts || newAlerts.length === 0) return;
+
+  const SUBSCRIBERS_FILE = path.join(__dirname, 'monitoring_subscribers.json');
+  let subscribersData = { subscribers: [] };
+  try {
+    if (fs.existsSync(SUBSCRIBERS_FILE)) {
+      subscribersData = JSON.parse(fs.readFileSync(SUBSCRIBERS_FILE, 'utf8'));
+    }
+  } catch(e) { return; }
+
+  const activeSubscribers = subscribersData.subscribers.filter(s => s.active);
+  if (activeSubscribers.length === 0) {
+    console.log('  ℹ No active subscribers to notify');
+    return;
+  }
+
+  const severityRank = { CRITICAL: 4, WARNING: 3, WATCH: 2, IMPROVEMENT: 1, INFO: 0 };
+
+  for (const subscriber of activeSubscribers) {
+    const threshold = subscriber.severity_threshold || 'WARNING';
+    const thresholdRank = severityRank[threshold] || 2;
+
+    // Filter alerts by subscriber's region preferences and severity threshold
+    const relevantAlerts = newAlerts.filter(alert => {
+      const meetsThreshold = (severityRank[alert.severity] || 0) >= thresholdRank;
+      const meetsRegion = !subscriber.regions || subscriber.regions.includes('all') ||
+        subscriber.regions.some(r => alert.region.toLowerCase().includes(r.toLowerCase()));
+      return meetsThreshold && meetsRegion;
+    });
+
+    if (relevantAlerts.length > 0) {
+      await sendAlertEmail(subscriber, relevantAlerts);
+    }
+  }
+}
+
+// Test email endpoint
+app.post('/monitoring/test-email', async (req, res) => {
+  const { email, secret } = req.body;
+  if (secret !== 'qgif-monitor-2026') return res.status(401).json({ error: 'Invalid key' });
+  if (!email) return res.status(400).json({ error: 'Email required' });
+
+  const transporter = createTransporter();
+  if (!transporter) return res.json({ status: 'ERROR', message: 'Gmail credentials not configured on server' });
+
+  const testAlert = {
+    severity: 'WARNING',
+    region: 'Western Region',
+    message: 'TEST ALERT — This is a test of the QGIF monitoring alert system. In a real alert, this would contain satellite-detected environmental changes.',
+    recommended_action: 'No action needed — this is a test',
+    previous_gap: 0.380,
+    current_gap: 0.444,
+    gap_change: 0.064,
+    previous_mining_score: 55,
+    current_mining_score: 73,
+    satellite_date: new Date().toISOString().split('T')[0],
+  };
+
+  const testSubscriber = { email, name: 'Test User', organisation: 'QGIF Test', severity_threshold: 'WARNING' };
+
+  try {
+    const sent = await sendAlertEmail(testSubscriber, [testAlert]);
+    res.json({ status: sent ? 'SENT' : 'FAILED', message: sent ? `Test email sent to ${email}` : 'Failed to send — check Gmail credentials' });
+  } catch(e) {
+    res.json({ status: 'ERROR', message: e.message });
+  }
+});
 
 app.listen(5000, () => {
   console.log('');

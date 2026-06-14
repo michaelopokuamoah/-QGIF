@@ -1073,6 +1073,19 @@ function MonitoringTab({monitorData,monitorLoading,runMonitor,dashData,dashLoadi
   const [regLoading,setRegLoading]=useState(false);
   const API="https://qgif-backend.onrender.com";
 
+  const [testEmailStatus,setTestEmailStatus]=useState(null);
+  const [testEmailLoading,setTestEmailLoading]=useState(false);
+
+  const sendTestEmail=async()=>{
+    if(!email){alert("Enter your email first");return;}
+    setTestEmailLoading(true);setTestEmailStatus(null);
+    try{
+      const r=await fetch(API+"/monitoring/test-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,secret:"qgif-monitor-2026"})});
+      const d=await r.json();setTestEmailStatus(d);
+    }catch(e){setTestEmailStatus({status:"ERROR",message:e.message});}
+    finally{setTestEmailLoading(false);}
+  };
+
   const registerAlert=async()=>{
     if(!email){return;}
     setRegLoading(true);setRegStatus(null);
@@ -1232,9 +1245,13 @@ function MonitoringTab({monitorData,monitorLoading,runMonitor,dashData,dashLoadi
             <button onClick={registerAlert} disabled={regLoading||!email} style={{padding:"8px 16px",borderRadius:6,border:"none",background:regLoading||!email?MUTED:`linear-gradient(135deg,${PURPLE},#7C3AED)`,color:"white",fontSize:12,fontWeight:700,cursor:regLoading||!email?"not-allowed":"pointer",fontFamily:FB}}>
               {regLoading?"Registering...":"Register"}
             </button>
+            <button onClick={sendTestEmail} disabled={testEmailLoading||!email} style={{padding:"8px 16px",borderRadius:6,border:`1px solid ${CYAN}`,background:"transparent",color:CYAN,fontSize:12,fontWeight:700,cursor:testEmailLoading||!email?"not-allowed":"pointer",fontFamily:FB}}>
+              {testEmailLoading?"Sending...":"Send Test Email"}
+            </button>
           </div>
-          {regStatus&&!regStatus.error&&<div style={{fontFamily:FB,fontSize:12,color:GREEN}}>✓ {regStatus.message} — You will receive alerts for: {regStatus.alert_threshold}</div>}
-          {regStatus?.error&&<div style={{fontFamily:FB,fontSize:12,color:AMBER}}>Error: {regStatus.error}</div>}
+          {regStatus&&!regStatus.error&&<div style={{fontFamily:FB,fontSize:12,color:GREEN,marginBottom:4}}>✓ {regStatus.message}</div>}
+          {regStatus?.error&&<div style={{fontFamily:FB,fontSize:12,color:AMBER,marginBottom:4}}>Error: {regStatus.error}</div>}
+          {testEmailStatus&&<div style={{fontFamily:FB,fontSize:12,color:testEmailStatus.status==="SENT"?GREEN:AMBER,marginBottom:4}}>{testEmailStatus.status==="SENT"?"✓ Test email sent — check your inbox!":"⚠ "+testEmailStatus.message}</div>}
           <div style={{fontFamily:FM,fontSize:9,color:MUTED,marginTop:8}}>
             Alert levels: WATCH (minor increase) · WARNING (significant increase, EPA visit recommended) · CRITICAL (major disturbance, immediate action)
           </div>
