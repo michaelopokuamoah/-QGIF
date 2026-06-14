@@ -1,2343 +1,2290 @@
-const express = require('express');
-const cors = require('cors');
-const math = require('mathjs');
-const ee = require('@google/earthengine');
-const fs = require('fs');
-const path = require('path');
+/* eslint-disable */
+import { useState, useEffect, useCallback, useRef } from "react";
+import { MapContainer, TileLayer, Marker, Tooltip, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+// ── DESIGN TOKENS ──────────────────────────────────────────
+// Palette: deep navy instrument panel — authoritative, scientific
+const BG="#040D1A",PANEL="#071526",P2="#0A1E33";
+const CYAN="#0EA5E9",GREEN="#10B981",AMBER="#F59E0B",RED="#EF4444",PURPLE="#8B5CF6";
+const TEXT="#E2EEF9",TEXT2="rgba(226,238,249,0.5)",MUTED="#3D5A73";
+const BORDER="rgba(14,165,233,0.12)",BORDER2="rgba(14,165,233,0.06)";
 
-// ============================================================
-// GOOGLE EARTH ENGINE — REAL SATELLITE DATA CONNECTION
-// ============================================================
-let EE_READY = false;
+// ── TYPOGRAPHY ─────────────────────────────────────────────
+// Inter: professional dashboard body — clear hierarchy, neutral authority
+// DM Mono: data labels and codes — precise without feeling retro
+const FH="Inter,'Segoe UI',system-ui,sans-serif";  // headings
+const FB="Inter,'Segoe UI',system-ui,sans-serif";  // body
+const FM="'DM Mono','Fira Mono','Courier New',monospace"; // data/labels
 
-function initEarthEngine() {
-  let privateKey = null;
+const SEV_C={CRITICAL:RED,HIGH:AMBER,MEDIUM:"#EAB308",LOW:GREEN};
+const SEV_BG={CRITICAL:"rgba(239,68,68,.1)",HIGH:"rgba(245,158,11,.1)",MEDIUM:"rgba(234,179,8,.08)",LOW:"rgba(16,185,129,.08)"};
+const IMP_C={TRANSFORMATIONAL:CYAN,CRITICAL:RED,"MAJOR IMPROVEMENT":GREEN,POSITIVE:PURPLE,HIGH:AMBER,MEDIUM:"#EAB308"};
 
-  // First try environment variable (used on Render/production)
-  if (process.env.GEE_KEY_JSON) {
-    try {
-      privateKey = JSON.parse(process.env.GEE_KEY_JSON);
-      console.log('  ✓ GEE key loaded from environment variable');
-    } catch (e) {
-      console.log('  ⚠ GEE_KEY_JSON environment variable found but invalid JSON:', e.message);
-    }
-  }
+const ROLES=[
+  {key:"government",label:"Government Official",icon:"GOV",color:CYAN,desc:"Policy briefings, budget decisions",prompts:["Which regions face the highest risk?","What is the cost of illegal mining?","Which issues need emergency action?","What reporting obligations is Ghana failing?"]},
+  {key:"epa",label:"EPA Officer",icon:"EPA",color:AMBER,desc:"Enforcement, violations, evidence",prompts:["All active violations with GPS","Which miners risk permit revocation?","What evidence exists for prosecution?","Which water bodies exceed legal limits?"]},
+  {key:"miner",label:"Licensed Miner",icon:"MIN",color:"#F5C842",desc:"Compliance, ESG, licence protection",prompts:["What is our compliance score?","How do we compare to peer operators?","Which ESG data do we need?","What actions protect our licence?"]},
+  {key:"ngo",label:"NGO / Dev Bank",icon:"NGO",color:PURPLE,desc:"Impact, vulnerability, carbon MRV",prompts:["Which communities are most vulnerable?","What is the carbon credit potential?","How many SDGs are impacted?","Which intervention prevents most disease per dollar?"]},
+  {key:"doctor",label:"Doctor / Health",icon:"MED",color:GREEN,desc:"Disease prediction, clinical protocols",prompts:["Which communities will present mercury cases?","What tests should I order?","How many waterborne cases to expect?","What are the neurological risks for children?"]},
+  {key:"farmer",label:"Farmer",icon:"AGR",color:"#F5C842",desc:"Irrigation safety, crop advice, yield",prompts:["Is my irrigation water safe?","Which crops are safe to grow?","What should I plant this season?","How will rainfall change?"]},
+];
 
-  // Fall back to file (used locally)
-  if (!privateKey) {
-    const keyPath = path.join(__dirname, 'gee-key.json');
-    if (!fs.existsSync(keyPath)) {
-      console.log('  ⚠ gee-key.json not found and GEE_KEY_JSON not set — running with simulated baselines only');
-      return;
-    }
-    try {
-      privateKey = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
-      console.log('  ✓ GEE key loaded from gee-key.json file');
-    } catch (e) {
-      console.log('  ⚠ gee-key.json found but invalid JSON:', e.message);
-      return;
-    }
-  }
+const LAYERS=[
+  {key:"all",icon:"Q",label:"All Threats"},{key:"mining",icon:"M",label:"Illegal Mining"},
+  {key:"health",icon:"H",label:"Public Health"},{key:"water",icon:"W",label:"Water Security"},
+  {key:"food",icon:"F",label:"Food & Agriculture"},{key:"climate",icon:"C",label:"Climate Risk"},
+  {key:"conflict",icon:"X",label:"Conflict"},{key:"carbon",icon:"T",label:"Carbon & Forest"},
+  {key:"disease",icon:"D",label:"Disease"},{key:"economy",icon:"E",label:"Economic Risk"},
+];
 
-  ee.data.authenticateViaPrivateKey(privateKey, () => {
-    ee.initialize(null, null, () => {
-      EE_READY = true;
-      console.log('  ✓ Google Earth Engine connected — REAL satellite data active');
-    }, (err) => {
-      console.log('  ⚠ Earth Engine initialize error:', err);
-    });
-  }, (err) => {
-    console.log('  ⚠ Earth Engine auth error:', err);
-  });
+const REGIONS=[
+  {name:"Western Region",risk:"CRITICAL"},{name:"Eastern Region",risk:"HIGH"},
+  {name:"Central Region",risk:"HIGH"},{name:"Ashanti Region",risk:"MEDIUM"},
+  {name:"Brong-Ahafo",risk:"MEDIUM"},{name:"Greater Accra",risk:"MEDIUM"},
+  {name:"Volta Region",risk:"LOW"},{name:"Northern Region",risk:"LOW"},
+  {name:"Upper East Region",risk:"LOW"},{name:"Upper West Region",risk:"LOW"},
+  {name:"Oti Region",risk:"MEDIUM"},{name:"Bono East",risk:"MEDIUM"},
+];
+
+const SCENARIOS=[
+  {key:"mining_doubles",label:"Mining Doubles",icon:"Mining",desc:"What if illegal mining doubles?"},
+  {key:"river_cleaned",label:"River Cleanup",icon:"Water",desc:"What if we clean the river?"},
+  {key:"mining_banned",label:"Enforcement",icon:"EPA",desc:"What if EPA eliminates illegal mining?"},
+  {key:"reforestation",label:"Reforestation",icon:"Forest",desc:"What if we restore 50,000 hectares?"},
+];
+
+
+function Tag({label,color=CYAN,bg}){
+  return <span style={{fontFamily:FM,fontSize:10,padding:"3px 9px",borderRadius:4,fontWeight:600,background:bg||`${color}18`,color,border:`1px solid ${color}33`,whiteSpace:"nowrap"}}>{label}</span>;
 }
-
-
-initEarthEngine();
-
-// Helper: get latest Sentinel-2 NDVI + cloud info for an area around a point
-function getSatelliteSnapshot(lat, lng) {
-  return new Promise((resolve, reject) => {
-    if (!EE_READY) return reject(new Error('Earth Engine not initialized'));
-    const point = ee.Geometry.Point([lng, lat]);
-    const area = point.buffer(5000); // 5km radius — captures surrounding land, not just town center pixel
-
-    // Rolling 12-month window ending today — always "live", never a fixed past date
-    const now = new Date();
-    const startDate = new Date(now);
-    startDate.setMonth(startDate.getMonth() - 12);
-    const fmt = (dt) => dt.toISOString().split('T')[0];
-
-    const collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-      .filterBounds(area)
-      .filterDate(fmt(startDate), fmt(now))
-      .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20)); // discard very cloudy scenes
-
-    // Most recent clear-ish image in the rolling window
-    const image = collection.sort('system:time_start', false).first();
-
-    const ndvi = image.normalizedDifference(['B8', 'B4']); // NDVI = (NIR-Red)/(NIR+Red)
-    const ndwi = image.normalizedDifference(['B3', 'B8']); // NDWI for water surface detection
-
-    // Water mask: NDWI > 0.1 is treated as water/river/lake and excluded from
-    // the NDVI land-degradation stats, so rivers don't get misread as "bare earth"
-    const waterMask = ndwi.lte(0.1);
-    const ndviLand = ndvi.updateMask(waterMask);
-
-    const ndviMean = ndviLand.reduceRegion({reducer: ee.Reducer.mean(), geometry: area, scale: 30, maxPixels: 1e9});
-    const ndviMin = ndviLand.reduceRegion({reducer: ee.Reducer.min(), geometry: area, scale: 30, maxPixels: 1e9});
-    const ndviP10 = ndviLand.reduceRegion({reducer: ee.Reducer.percentile([10]), geometry: area, scale: 30, maxPixels: 1e9});
-    const ndwiMean = ndwi.reduceRegion({reducer: ee.Reducer.mean(), geometry: area, scale: 30, maxPixels: 1e9});
-    const waterFraction = ndwi.gt(0.1).reduceRegion({reducer: ee.Reducer.mean(), geometry: area, scale: 30, maxPixels: 1e9});
-    const cloudPct = image.get('CLOUDY_PIXEL_PERCENTAGE');
-    const dateMs = image.get('system:time_start');
-
-    ee.data.computeValue(ee.Dictionary({
-      ndvi_mean: ndviMean.get('nd'),
-      ndvi_min: ndviMin.get('nd'),
-      ndvi_p10: ndviP10.get('nd'),
-      ndwi_mean: ndwiMean.get('nd'),
-      water_fraction: waterFraction.get('nd'),
-      cloud: cloudPct,
-      date: dateMs
-    }), (result, err) => {
-      if (err) return reject(new Error(err));
-      resolve(result);
-    });
-  });
-}
-
-// ============================================================
-// LIVE DETECTION ENGINE — Multi-index satellite analysis
-// Detects mining activity, water contamination, health risk
-// All from real Sentinel-2 satellite data
-// ============================================================
-
-function getLiveDetection(lat, lng, radiusMeters = 5000) {
-  return new Promise((resolve, reject) => {
-    if (!EE_READY) return reject(new Error('Earth Engine not initialized'));
-
-    const point = ee.Geometry.Point([lng, lat]);
-    const area = point.buffer(radiusMeters);
-
-    // Rolling 12-month window for current image
-    const now = new Date();
-    const startDate = new Date(now);
-    startDate.setMonth(startDate.getMonth() - 12);
-    const fmt = (dt) => dt.toISOString().split('T')[0];
-
-    // Baseline window — 4-5 years ago for change detection
-    const baselineEnd = new Date(now);
-    baselineEnd.setFullYear(baselineEnd.getFullYear() - 4);
-    const baselineStart = new Date(baselineEnd);
-    baselineStart.setMonth(baselineStart.getMonth() - 12);
-
-    const s2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED');
-
-    // Current best image
-    const current = s2.filterBounds(area)
-      .filterDate(fmt(startDate), fmt(now))
-      .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
-      .sort('system:time_start', false)
-      .first();
-
-    // Baseline image (4-5 years ago) for change detection
-    const baseline = s2.filterBounds(area)
-      .filterDate(fmt(baselineStart), fmt(baselineEnd))
-      .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
-      .sort('CLOUDY_PIXEL_PERCENTAGE')
-      .first();
-
-    // ── CURRENT IMAGE INDICES ──
-
-    // NDVI — vegetation health
-    const ndvi_cur = current.normalizedDifference(['B8', 'B4']);
-
-    // BSI — Bare Soil Index. Detects exposed/disturbed earth
-    // BSI = ((Red + SWIR1) - (NIR + Blue)) / ((Red + SWIR1) + (NIR + Blue))
-    const bsi_cur = current.expression(
-      '((Red + SWIR1) - (NIR + Blue)) / ((Red + SWIR1) + (NIR + Blue))',
-      {Red: current.select('B4'), SWIR1: current.select('B11'), NIR: current.select('B8'), Blue: current.select('B2')}
-    ).rename('bsi');
-
-    // MNDWI — Modified Normalized Difference Water Index
-    // Better for turbidity and sediment-laden water
-    // MNDWI = (Green - SWIR1) / (Green + SWIR1)
-    const mndwi_cur = current.normalizedDifference(['B3', 'B11']);
-
-    // Iron Oxide Ratio — detects iron-rich mining waste/tailings
-    // IOR = Red / Blue
-    const ior_cur = current.select('B4').divide(current.select('B2')).rename('ior');
-
-    // Clay Mineral Ratio — detects disturbed geology/overburden
-    // CMR = SWIR1 / SWIR2
-    const cmr_cur = current.select('B11').divide(current.select('B12')).rename('cmr');
-
-    // Water mask for land-only stats
-    const waterMask = mndwi_cur.lte(0.0);
-    const ndvi_land = ndvi_cur.updateMask(waterMask);
-    const bsi_land = bsi_cur.updateMask(waterMask);
-
-    // ── BASELINE IMAGE INDICES ──
-    const ndvi_base = baseline.normalizedDifference(['B8', 'B4']);
-    const bsi_base = baseline.expression(
-      '((Red + SWIR1) - (NIR + Blue)) / ((Red + SWIR1) + (NIR + Blue))',
-      {Red: baseline.select('B4'), SWIR1: baseline.select('B11'), NIR: baseline.select('B8'), Blue: baseline.select('B2')}
-    ).rename('bsi');
-    const bsi_base_land = bsi_base.updateMask(waterMask);
-    const ndvi_base_land = ndvi_base.updateMask(waterMask);
-
-    // ── CHANGE DETECTION ──
-    // Positive BSI change = more bare earth = possible new mining
-    const bsi_change = bsi_land.subtract(bsi_base_land).rename('bsi_change');
-    // Negative NDVI change = vegetation loss
-    const ndvi_change = ndvi_land.subtract(ndvi_base_land).rename('ndvi_change');
-
-    // ── REDUCE TO STATISTICS ──
-    const scale = 30;
-    const opts = {geometry: area, scale, maxPixels: 1e9};
-
-    const stats = ee.Dictionary({
-      // Current state
-      ndvi_mean:    ndvi_land.reduceRegion({reducer: ee.Reducer.mean(), ...opts}).get('nd'),
-      ndvi_p10:     ndvi_land.reduceRegion({reducer: ee.Reducer.percentile([10]), ...opts}).get('nd'),
-      bsi_mean:     bsi_land.reduceRegion({reducer: ee.Reducer.mean(), ...opts}).get('bsi'),
-      bsi_p90:      bsi_land.reduceRegion({reducer: ee.Reducer.percentile([90]), ...opts}).get('bsi'),
-      mndwi_mean:   mndwi_cur.reduceRegion({reducer: ee.Reducer.mean(), ...opts}).get('nd'),
-      ior_mean:     ior_cur.updateMask(waterMask).reduceRegion({reducer: ee.Reducer.mean(), ...opts}).get('ior'),
-      cmr_mean:     cmr_cur.updateMask(waterMask).reduceRegion({reducer: ee.Reducer.mean(), ...opts}).get('cmr'),
-      water_pct:    mndwi_cur.gt(0.0).reduceRegion({reducer: ee.Reducer.mean(), ...opts}).get('nd'),
-      // Change since baseline
-      bsi_change_mean: bsi_change.reduceRegion({reducer: ee.Reducer.mean(), ...opts}).get('bsi_change'),
-      bsi_change_p90:  bsi_change.reduceRegion({reducer: ee.Reducer.percentile([90]), ...opts}).get('bsi_change'),
-      ndvi_change_mean: ndvi_change.reduceRegion({reducer: ee.Reducer.mean(), ...opts}).get('ndvi_change'),
-      // Metadata
-      current_date:  current.get('system:time_start'),
-      baseline_date: baseline.get('system:time_start'),
-      current_cloud: current.get('CLOUDY_PIXEL_PERCENTAGE'),
-    });
-
-    ee.data.computeValue(stats, (result, err) => {
-      if (err) return reject(new Error(err));
-      resolve(result);
-    });
-  });
-}
-
-// Convert raw satellite indices into environmental intelligence
-function interpretDetection(raw, radiusKm = 5) {
-
-  const ndviMean = raw.ndvi_mean || 0;
-  const ndviP10 = raw.ndvi_p10 || 0;
-  const bsiMean = raw.bsi_mean || 0;
-  const bsiP90 = raw.bsi_p90 || 0;
-  const mndwiMean = raw.mndwi_mean || 0;
-  const iorMean = raw.ior_mean || 1;
-  const cmrMean = raw.cmr_mean || 1;
-  const waterPct = (raw.water_pct || 0) * 100;
-  const bsiChangeMean = raw.bsi_change_mean || 0;
-  const bsiChangeP90 = raw.bsi_change_p90 || 0;
-  const ndviChangeMean = raw.ndvi_change_mean || 0;
-
-  // ── 1. MINING ACTIVITY DETECTION SCORE (0-100) ──
-  // Combines: bare soil index, iron oxide ratio, change detection
-  // High BSI = exposed earth; High IOR = iron-rich soil (mine waste)
-  // Positive BSI change = new clearing since baseline
-
-  const bsiScore    = Math.min(100, Math.max(0, (bsiMean + 0.5) / 1.0 * 60));      // 0-60 pts
-  const changeScore = Math.min(100, Math.max(0, bsiChangeMean * 200));               // 0-100 pts from new clearing
-  const iorScore    = Math.min(100, Math.max(0, (iorMean - 1.0) / 1.5 * 40));       // 0-40 pts iron oxide
-  const ndviLossScore = Math.min(100, Math.max(0, -ndviChangeMean * 200));           // vegetation loss
-
-  const miningScore = Math.round(
-    bsiScore * 0.30 +
-    changeScore * 0.35 +
-    iorScore * 0.15 +
-    ndviLossScore * 0.20
+function Spinner({label}){
+  return(
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"50px 20px",gap:16}}>
+      <div style={{width:52,height:52,position:"relative"}}>
+        {[[52,CYAN,".9s"],[38,PURPLE,"1.3s"],[26,GREEN,"1.7s"]].map(([sz,col,dur],i)=>(
+          <div key={i} style={{position:"absolute",width:sz,height:sz,top:"50%",left:"50%",borderRadius:"50%",border:"2px solid transparent",[i===0?"borderTopColor":i===1?"borderRightColor":"borderBottomColor"]:col,animation:`qspin ${dur} linear infinite`,transform:"translate(-50%,-50%)"}}/>
+        ))}
+      </div>
+      <div style={{fontFamily:FB,fontSize:13,color:MUTED,textAlign:"center",lineHeight:1.7}}>{label}</div>
+    </div>
   );
-
-  // ── 2. WATER CONTAMINATION RISK ──
-  // MNDWI near 0 in rivers = high sediment/turbidity = mining runoff
-  // High turbidity correlates with mercury/arsenic contamination
-  // This is a PROXY — not a direct chemical measurement
-
-  const turbidityProxy = waterPct > 2 ?
-    Math.max(0, Math.min(1, (-mndwiMean + 0.3) / 0.8)) : 0;
-
-  // Iron oxide near water = tailings contamination risk
-  const tailingsRisk = Math.min(1, Math.max(0, (iorMean - 1.2) / 1.0));
-
-  const contaminationScore = Math.round((turbidityProxy * 0.6 + tailingsRisk * 0.4) * 100);
-
-  // Estimate turbidity in NTU from satellite proxy
-  // Empirical relationship: NTU ≈ 1200 * turbidityProxy^1.5
-  const estimatedTurbidityNTU = Math.round(1200 * Math.pow(turbidityProxy, 1.5));
-
-  // Estimate mercury proxy — NOT actual mercury measurement
-  // Based on correlation between turbidity and mercury in Ghana mining regions
-  // Coefficient derived from: Akoto et al. 2017 (Pra River study)
-  const mercuryProxy_mgl = Math.round(estimatedTurbidityNTU * 0.000085 * 1000) / 1000;
-
-  // ── 3. FOREST LOSS SINCE BASELINE ──
-  const forestLossPct = Math.round(Math.max(0, -ndviChangeMean) * 100 * 1.5);
-  const newClearingHa = Math.round(forestLossPct / 100 * Math.PI * radiusKm * radiusKm * 100) / 100;
-
-  // ── 4. HEALTH RISK FROM SATELLITE PROXY ──
-  // Run Poisson disease model using satellite-derived contamination
-  const satContaminationIndex = Math.min(1, contaminationScore / 100);
-  const satLambda = satContaminationIndex * 0.04; // Poisson rate
-  const outbreakProb = Math.round((1 - Math.exp(-satLambda * 30)) * 100 * 10) / 10;
-
-  // Neurological risk from turbidity proxy
-  const mercuryExposureRatio = mercuryProxy_mgl / 0.001; // WHO limit
-  const neurologicalRiskPct = Math.round(
-    (1 / (1 + Math.exp(-2 * (mercuryExposureRatio - 1)))) * 100
+}
+function Card({children,color=BORDER,style={}}){
+  return <div style={{background:PANEL,border:`1px solid ${color}`,borderRadius:12,padding:18,marginBottom:14,...style}}>{children}</div>;
+}
+function Label({text,color=MUTED}){
+  return <div style={{fontFamily:FM,fontSize:9,color,letterSpacing:".07em",marginBottom:6}}>{text}</div>;
+}
+function MetricGrid({items}){
+  return(
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(items.length,3)},1fr)`,gap:8,marginBottom:12}}>
+      {items.map(([l,v,col,sub],i)=>(
+        <div key={i} style={{background:P2,borderRadius:8,padding:"10px 12px"}}>
+          <Label text={l}/>
+          <div style={{fontFamily:FB,fontSize:15,fontWeight:700,color:col||CYAN,lineHeight:1.2}}>{v}</div>
+          {sub&&<div style={{fontFamily:FB,fontSize:10,color:MUTED,marginTop:3}}>{sub}</div>}
+        </div>
+      ))}
+    </div>
   );
-
-  // ── 5. OVERALL THREAT LEVEL ──
-  const overallScore = Math.round(
-    miningScore * 0.4 +
-    contaminationScore * 0.3 +
-    forestLossPct * 0.2 +
-    outbreakProb * 0.1
+}
+function InfoBox({label,value,color=CYAN}){
+  return(
+    <div style={{background:P2,borderRadius:7,padding:"10px 12px",marginBottom:8}}>
+      <Label text={label} color={color}/>
+      <div style={{fontFamily:FB,fontSize:13,color:TEXT,lineHeight:1.65}}>{value}</div>
+    </div>
   );
-
-  const threatLevel = overallScore > 70 ? 'CRITICAL' :
-                      overallScore > 50 ? 'HIGH' :
-                      overallScore > 30 ? 'MEDIUM' : 'LOW';
-
-  // ── 6. MINING ACTIVITY CLASSIFICATION ──
-  const miningActivity =
-    miningScore > 70 ? 'STRONG MINING SIGNATURE — Active or recent illegal mining highly probable' :
-    miningScore > 50 ? 'MODERATE MINING SIGNATURE — Significant land disturbance detected, mining possible' :
-    miningScore > 30 ? 'WEAK MINING SIGNATURE — Some disturbance detected, could be agriculture or construction' :
-                       'NO SIGNIFICANT MINING SIGNATURE — Land appears stable';
-
-  // ── 7. CONTAMINATION CLASSIFICATION ──
-  const contaminationLevel =
-    contaminationScore > 70 ? 'HIGH — Satellite proxy indicates significant water quality risk. Urgent water testing recommended.' :
-    contaminationScore > 40 ? 'MEDIUM — Some turbidity/iron oxide signal near water bodies. Water testing advisable.' :
-    contaminationScore > 20 ? 'LOW-MEDIUM — Minor contamination signals. Monitor closely.' :
-                               'LOW — Water quality proxy indicators within acceptable range.';
-
-  return {
-    satellite_indices: {
-      ndvi_mean: Math.round(ndviMean * 1000) / 1000,
-      ndvi_p10: Math.round(ndviP10 * 1000) / 1000,
-      bsi_mean: Math.round(bsiMean * 1000) / 1000,
-      bsi_p90: Math.round(bsiP90 * 1000) / 1000,
-      mndwi_mean: Math.round(mndwiMean * 1000) / 1000,
-      iron_oxide_ratio: Math.round(iorMean * 100) / 100,
-      clay_mineral_ratio: Math.round(cmrMean * 100) / 100,
-      water_coverage_pct: Math.round(waterPct * 10) / 10,
-      bsi_change_from_baseline: Math.round(bsiChangeMean * 1000) / 1000,
-      ndvi_change_from_baseline: Math.round(ndviChangeMean * 1000) / 1000,
-    },
-    mining_detection: {
-      score: miningScore,
-      level: threatLevel,
-      classification: miningActivity,
-      bsi_contribution: Math.round(bsiScore * 0.30),
-      change_contribution: Math.round(changeScore * 0.35),
-      iron_contribution: Math.round(iorScore * 0.15),
-      vegetation_loss_contribution: Math.round(ndviLossScore * 0.20),
-      new_clearing_ha: newClearingHa,
-      forest_loss_pct: forestLossPct,
-      methodology: 'Bare Soil Index (BSI) + Change Detection (BSI delta vs baseline) + Iron Oxide Ratio + NDVI Loss. All from Sentinel-2 satellite. NOT a trained ML classifier — this is index-based detection.'
-    },
-    water_contamination: {
-      score: contaminationScore,
-      level: contaminationScore > 70 ? 'HIGH' : contaminationScore > 40 ? 'MEDIUM' : 'LOW',
-      classification: contaminationLevel,
-      turbidity_proxy_ntu: estimatedTurbidityNTU,
-      mercury_proxy_mgl: mercuryProxy_mgl,
-      mercury_proxy_times_who: Math.round(mercuryProxy_mgl / 0.001 * 10) / 10,
-      important_disclaimer: 'PROXY ONLY — This is a satellite-based estimate, NOT a chemical measurement. Mercury proxy derived from turbidity correlation (Akoto et al. 2017, Pra River). Actual water testing required for regulatory or clinical use.',
-      action_required: contaminationScore > 50 ? 'Water testing STRONGLY recommended — contact Ghana EPA or CSIR-WRI' : 'Monitor — schedule water quality sampling within 30 days'
-    },
-    health_risk: {
-      outbreak_probability_30days_pct: outbreakProb,
-      neurological_risk_pct: neurologicalRiskPct,
-      mercury_exposure_ratio: Math.round(mercuryExposureRatio * 10) / 10,
-      disease_model: 'Poisson transmission model using satellite contamination proxy as input',
-      disclaimer: 'Health risk calculated from satellite water quality proxy. Clinical decisions require actual water/blood testing.'
-    },
-    overall: {
-      threat_score: overallScore,
-      threat_level: threatLevel,
-      data_quality: 'SATELLITE-DERIVED — All values calculated from real Sentinel-2 imagery. Contamination and health values are proxies, not direct measurements.',
-    }
-  };
+}
+function BulletList({items,color=CYAN,icon="•"}){
+  return(
+    <div>
+      {(items||[]).map((item,i)=>(
+        <div key={i} style={{display:"flex",gap:8,padding:"6px 10px",background:P2,borderRadius:6,marginBottom:5}}>
+          <span style={{color,flexShrink:0,fontSize:12}}>{icon}</span>
+          <span style={{fontFamily:FB,fontSize:12,color:TEXT,lineHeight:1.6}}>{typeof item==="object"?item.signal||item.event||item.action||item.indicator||JSON.stringify(item):item}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
+// ── Global constants for Leaflet map ──
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
 
+// ═══════════════════════════════════════════════
+// PROFESSIONAL MAP SYSTEM — Full Ghana Coverage
+// ═══════════════════════════════════════════════
 
-const REGION_DATA = {
-  'Western Region':    { risk:'CRITICAL', lat:5.31,  lng:-1.99, mercury_mgl:0.082, arsenic_mgl:0.045, turbidity_ntu:847,  rainfall_mm:1800, temp_c:27.2, illegal_sites:38, population:800000,  pop_density:103, children_under12:192000, fishing_communities:34, forest_cover_pct:28, deforestation_rate:3.1, sanitation_pct:38, river:'Pra and Ankobra', town:'Tarkwa, Prestea and Bogoso' },
-  'Eastern Region':    { risk:'HIGH',     lat:6.16,  lng:-0.55, mercury_mgl:0.034, arsenic_mgl:0.021, turbidity_ntu:412,  rainfall_mm:1400, temp_c:26.8, illegal_sites:14, population:1200000, pop_density:143, children_under12:288000, fishing_communities:18, forest_cover_pct:41, deforestation_rate:2.4, sanitation_pct:44, river:'Birim and Densu',  town:'Obuasi, Kibi and Koforidua' },
-  'Central Region':    { risk:'HIGH',     lat:5.55,  lng:-1.02, mercury_mgl:0.028, arsenic_mgl:0.018, turbidity_ntu:380,  rainfall_mm:1200, temp_c:27.0, illegal_sites:11, population:1200000, pop_density:125, children_under12:264000, fishing_communities:22, forest_cover_pct:35, deforestation_rate:2.1, sanitation_pct:46, river:'Offin River',      town:'Cape Coast, Dunkwa and Assin Fosu' },
-  'Ashanti Region':    { risk:'MEDIUM',   lat:6.69,  lng:-1.62, mercury_mgl:0.018, arsenic_mgl:0.011, turbidity_ntu:240,  rainfall_mm:1450, temp_c:26.5, illegal_sites:7,  population:3800000, pop_density:247, children_under12:836000, fishing_communities:8,  forest_cover_pct:44, deforestation_rate:1.8, sanitation_pct:52, river:'Oda and Offin',   town:'Kumasi, Konongo and Obuasi' },
-  'Brong-Ahafo':       { risk:'MEDIUM',   lat:7.47,  lng:-2.33, mercury_mgl:0.012, arsenic_mgl:0.008, turbidity_ntu:180,  rainfall_mm:1300, temp_c:28.1, illegal_sites:4,  population:900000,  pop_density:51,  children_under12:198000, fishing_communities:6,  forest_cover_pct:52, deforestation_rate:2.3, sanitation_pct:41, river:'Tano and Black Volta', town:'Sunyani, Techiman and Berekum' },
-  'Greater Accra':     { risk:'MEDIUM',   lat:5.55,  lng:-0.20, mercury_mgl:0.009, arsenic_mgl:0.006, turbidity_ntu:160,  rainfall_mm:730,  temp_c:28.4, illegal_sites:3,  population:5400000, pop_density:1225,children_under12:972000, fishing_communities:12, forest_cover_pct:8,  deforestation_rate:1.1, sanitation_pct:67, river:'Densu and Weija Lake', town:'Accra, Tema and Kasoa' },
-  'Volta Region':      { risk:'LOW',      lat:6.59,  lng:0.45,  mercury_mgl:0.004, arsenic_mgl:0.003, turbidity_ntu:90,   rainfall_mm:1100, temp_c:27.8, illegal_sites:2,  population:1600000, pop_density:82,  children_under12:352000, fishing_communities:28, forest_cover_pct:38, deforestation_rate:1.4, sanitation_pct:43, river:'Volta Lake and Oti', town:'Ho, Hohoe and Keta' },
-  'Northern Region':   { risk:'LOW',      lat:9.40,  lng:-0.85, mercury_mgl:0.003, arsenic_mgl:0.002, turbidity_ntu:70,   rainfall_mm:1050, temp_c:32.1, illegal_sites:1,  population:2400000, pop_density:53,  children_under12:624000, fishing_communities:4,  forest_cover_pct:22, deforestation_rate:1.8, sanitation_pct:28, river:'White and Black Volta', town:'Tamale, Yendi and Salaga' },
-  'Upper East Region': { risk:'LOW',      lat:10.78, lng:-0.87, mercury_mgl:0.002, arsenic_mgl:0.001, turbidity_ntu:55,   rainfall_mm:900,  temp_c:33.2, illegal_sites:1,  population:1100000, pop_density:103, children_under12:286000, fishing_communities:2,  forest_cover_pct:12, deforestation_rate:1.2, sanitation_pct:22, river:'Red Volta',       town:'Bolgatanga, Navrongo and Bawku' },
-  'Upper West Region': { risk:'LOW',      lat:10.25, lng:-2.32, mercury_mgl:0.002, arsenic_mgl:0.001, turbidity_ntu:50,   rainfall_mm:950,  temp_c:32.8, illegal_sites:1,  population:700000,  pop_density:44,  children_under12:182000, fishing_communities:2,  forest_cover_pct:15, deforestation_rate:1.1, sanitation_pct:19, river:'Black Volta upper', town:'Wa, Lawra and Nandom' },
-  'Oti Region':        { risk:'MEDIUM',   lat:8.45,  lng:0.30,  mercury_mgl:0.008, arsenic_mgl:0.005, turbidity_ntu:140,  rainfall_mm:1200, temp_c:29.4, illegal_sites:3,  population:600000,  pop_density:32,  children_under12:144000, fishing_communities:8,  forest_cover_pct:45, deforestation_rate:1.9, sanitation_pct:35, river:'Oti River',       town:'Dambai, Nkwanta and Jasikan' },
-  'Bono East':         { risk:'MEDIUM',   lat:7.75,  lng:-1.20, mercury_mgl:0.010, arsenic_mgl:0.007, turbidity_ntu:155,  rainfall_mm:1250, temp_c:28.7, illegal_sites:3,  population:1100000, pop_density:58,  children_under12:264000, fishing_communities:5,  forest_cover_pct:48, deforestation_rate:2.0, sanitation_pct:38, river:'Tano River',      town:'Kintampo, Techiman North and Atebubu' },
+// Fix Leaflet default icon
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl:'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
+
+// All 12 Ghana regions with full data
+const REGION_COORDS={
+  'Western Region':    {lat:5.31,  lng:-1.99, risk:'CRITICAL',sites:38,mercury:0.082,pop:800000,  capital:'Sekondi-Takoradi',river:'Pra and Ankobra'},
+  'Eastern Region':    {lat:6.16,  lng:-0.55, risk:'HIGH',    sites:14,mercury:0.034,pop:1200000, capital:'Koforidua',         river:'Birim and Densu'},
+  'Central Region':    {lat:5.55,  lng:-1.02, risk:'HIGH',    sites:11,mercury:0.028,pop:1200000, capital:'Cape Coast',         river:'Offin River'},
+  'Ashanti Region':    {lat:6.69,  lng:-1.62, risk:'MEDIUM',  sites:7, mercury:0.018,pop:3800000, capital:'Kumasi',             river:'Oda and Offin'},
+  'Brong-Ahafo':       {lat:7.47,  lng:-2.33, risk:'MEDIUM',  sites:4, mercury:0.012,pop:900000,  capital:'Sunyani',            river:'Tano and Black Volta'},
+  'Greater Accra':     {lat:5.55,  lng:-0.20, risk:'MEDIUM',  sites:3, mercury:0.009,pop:5400000, capital:'Accra',              river:'Densu and Weija Lake'},
+  'Volta Region':      {lat:6.59,  lng:0.45,  risk:'LOW',     sites:2, mercury:0.004,pop:1600000, capital:'Ho',                 river:'Volta Lake and Oti'},
+  'Northern Region':   {lat:9.40,  lng:-0.85, risk:'LOW',     sites:1, mercury:0.003,pop:2400000, capital:'Tamale',             river:'White and Black Volta'},
+  'Upper East Region': {lat:10.78, lng:-0.87, risk:'LOW',     sites:1, mercury:0.002,pop:1100000, capital:'Bolgatanga',         river:'Red Volta'},
+  'Upper West Region': {lat:10.25, lng:-2.32, risk:'LOW',     sites:1, mercury:0.002,pop:700000,  capital:'Wa',                 river:'Black Volta upper'},
+  'Oti Region':        {lat:8.45,  lng:0.30,  risk:'MEDIUM',  sites:3, mercury:0.008,pop:600000,  capital:'Dambai',             river:'Oti River'},
+  'Bono East':         {lat:7.75,  lng:-1.20, risk:'MEDIUM',  sites:3, mercury:0.010,pop:1100000, capital:'Kintampo',           river:'Tano River'},
 };
 
-// ============================================================
-// PREDICTION MODELS
-// ============================================================
+// Major towns and cities with population and type
+const GHANA_TOWNS=[
+  {name:'Accra',        lat:5.6037, lng:-0.1870, type:'capital',   pop:2500000, region:'Greater Accra'},
+  {name:'Kumasi',       lat:6.6885, lng:-1.6244, type:'city',      pop:3500000, region:'Ashanti Region'},
+  {name:'Tamale',       lat:9.4008, lng:-0.8393, type:'city',      pop:370000,  region:'Northern Region'},
+  {name:'Takoradi',     lat:4.9016, lng:-1.7749, type:'city',      pop:445000,  region:'Western Region'},
+  {name:'Cape Coast',   lat:5.1053, lng:-1.2466, type:'city',      pop:170000,  region:'Central Region'},
+  {name:'Sunyani',      lat:7.3349, lng:-2.3123, type:'city',      pop:89000,   region:'Brong-Ahafo'},
+  {name:'Koforidua',    lat:6.0940, lng:-0.2574, type:'city',      pop:87000,   region:'Eastern Region'},
+  {name:'Ho',           lat:6.6011, lng:0.4714,  type:'city',      pop:78000,   region:'Volta Region'},
+  {name:'Bolgatanga',   lat:10.785, lng:-0.8514, type:'city',      pop:65000,   region:'Upper East Region'},
+  {name:'Wa',           lat:10.060, lng:-2.5000, type:'city',      pop:107000,  region:'Upper West Region'},
+  {name:'Tarkwa',       lat:5.3059, lng:-1.9889, type:'mining',    pop:50000,   region:'Western Region'},
+  {name:'Obuasi',       lat:6.2013, lng:-1.6803, type:'mining',    pop:60000,   region:'Ashanti Region'},
+  {name:'Prestea',      lat:5.4333, lng:-2.1500, type:'mining',    pop:25000,   region:'Western Region'},
+  {name:'Bogoso',       lat:5.5333, lng:-2.0167, type:'mining',    pop:20000,   region:'Western Region'},
+  {name:'Dunkwa',       lat:5.9667, lng:-1.7833, type:'mining',    pop:30000,   region:'Central Region'},
+  {name:'Konongo',      lat:6.6167, lng:-1.2167, type:'mining',    pop:35000,   region:'Ashanti Region'},
+  {name:'Bibiani',      lat:6.4667, lng:-2.3333, type:'mining',    pop:28000,   region:'Western Region'},
+  {name:'Techiman',     lat:7.5833, lng:-1.9333, type:'town',      pop:85000,   region:'Brong-Ahafo'},
+  {name:'Berekum',      lat:7.4500, lng:-2.5833, type:'town',      pop:50000,   region:'Brong-Ahafo'},
+  {name:'Kintampo',     lat:8.0500, lng:-1.7167, type:'town',      pop:35000,   region:'Bono East'},
+  {name:'Salaga',       lat:8.5500, lng:-0.5167, type:'town',      pop:20000,   region:'Northern Region'},
+  {name:'Yendi',        lat:9.4430, lng:-0.0103, type:'town',      pop:35000,   region:'Northern Region'},
+  {name:'Navrongo',     lat:10.894, lng:-1.0921, type:'town',      pop:25000,   region:'Upper East Region'},
+  {name:'Bawku',        lat:11.059, lng:-0.2424, type:'town',      pop:46000,   region:'Upper East Region'},
+  {name:'Lawra',        lat:10.638, lng:-2.8965, type:'town',      pop:15000,   region:'Upper West Region'},
+  {name:'Hohoe',        lat:7.1511, lng:0.4739,  type:'town',      pop:44000,   region:'Volta Region'},
+  {name:'Keta',         lat:5.9167, lng:1.0000,  type:'town',      pop:20000,   region:'Volta Region'},
+  {name:'Nkawkaw',      lat:6.5500, lng:-0.7667, type:'town',      pop:35000,   region:'Eastern Region'},
+  {name:'Suhum',        lat:6.0416, lng:-0.4529, type:'town',      pop:25000,   region:'Eastern Region'},
+  {name:'Kasoa',        lat:5.5333, lng:-0.4167, type:'town',      pop:134000,  region:'Greater Accra'},
+  {name:'Tema',         lat:5.6698, lng:-0.0166, type:'city',      pop:160000,  region:'Greater Accra'},
+  {name:'Winneba',      lat:5.3483, lng:-0.6228, type:'town',      pop:50000,   region:'Central Region'},
+  {name:'Elmina',       lat:5.0844, lng:-1.3469, type:'town',      pop:33000,   region:'Central Region'},
+  {name:'Assin Fosu',   lat:5.6965, lng:-1.2930, type:'town',      pop:25000,   region:'Central Region'},
+  {name:'Dambai',       lat:7.9676, lng:0.1732,  type:'town',      pop:15000,   region:'Oti Region'},
+  {name:'Nkwanta',      lat:8.2500, lng:0.1500,  type:'town',      pop:20000,   region:'Oti Region'},
+];
 
-function predictWaterborneDisease(d, days) {
-  const turbidity_factor = Math.min(d.turbidity_ntu / 100, 10) / 10;
-  const mercury_factor   = Math.min(d.mercury_mgl / 0.001, 100) / 100;
-  const arsenic_factor   = Math.min(d.arsenic_mgl / 0.01, 10) / 10;
-  const contamination_index = (turbidity_factor * 0.4 + mercury_factor * 0.4 + arsenic_factor * 0.2);
-  const sanitation_risk = 1 - (d.sanitation_pct / 100);
-  const density_factor = Math.min(d.pop_density / 500, 1);
-  const rainfall_multiplier = 1 + (d.rainfall_mm / 2000);
-  const lambda = contamination_index * sanitation_risk * density_factor * rainfall_multiplier * 0.08;
-  const probability = (1 - Math.exp(-lambda * days)) * 100;
-  const base_rate = contamination_index * d.population * 0.002;
-  const expected_cases_weekly = Math.round(base_rate * (1 + lambda * 7));
-  const disease = d.turbidity_ntu > 500 ? 'Cholera' : d.arsenic_mgl > 0.02 ? 'Arsenicosis' : d.mercury_mgl > 0.05 ? 'Mercury poisoning' : 'Typhoid';
-  return {
-    probability_pct: Math.min(Math.round(probability * 10) / 10, 99.9),
-    disease, lambda: Math.round(lambda * 10000) / 10000,
-    contamination_index: Math.round(contamination_index * 100) / 100,
-    expected_cases_week1: expected_cases_weekly,
-    expected_cases_week4: Math.round(expected_cases_weekly * 3.8),
-    highest_risk_group: d.children_under12 > d.population * 0.2 ? 'Children under 12' : 'All age groups',
-    days_to_outbreak: Math.round(-Math.log(1 - Math.min(probability/100, 0.99)) / (lambda || 0.001)),
-  };
+// Major rivers with contamination data
+// Known illegal mining hotspots
+const MINING_HOTSPOTS=[
+  {lat:5.31, lng:-1.99, severity:10, name:'Tarkwa Mining Zone',     sites:38, desc:'Largest illegal mining concentration in Ghana'},
+  {lat:5.43, lng:-2.14, severity:9,  name:'Prestea-Bogoso Corridor',sites:12, desc:'High mercury contamination in Ankobra tributary'},
+  {lat:6.20, lng:-1.68, severity:8,  name:'Obuasi Periphery',       sites:8,  desc:'Illegal operations around licensed AngloGold boundary'},
+  {lat:5.97, lng:-1.78, severity:8,  name:'Dunkwa Mining Belt',     sites:7,  desc:'Active galamsey along Offin River'},
+  {lat:6.46, lng:-2.33, severity:7,  name:'Bibiani Area',           sites:5,  desc:'Small-scale mining expanding into forest reserve'},
+  {lat:6.62, lng:-1.22, severity:6,  name:'Konongo Corridor',       sites:4,  desc:'Mercury detected in Oda River tributaries'},
+  {lat:7.75, lng:-1.20, severity:5,  name:'Bono East Expansion',    sites:3,  desc:'New illegal sites identified via satellite 2024'},
+  {lat:8.45, lng:0.30,  severity:4,  name:'Oti River Zone',         sites:3,  desc:'Cross-border mining activity detected'},
+];
+
+function getRiskColor(risk){
+  return{CRITICAL:'#E83A3A',HIGH:'#F07020',MEDIUM:'#F5C842',LOW:'#00E87A'}[risk]||'#4A6880';
 }
 
-function predictMercuryNeurological(d) {
-  const fish_mercury_mgkg = d.mercury_mgl * 1000;
-  const daily_intake_ug = (fish_mercury_mgkg * 45) / 1000;
-  const adult_safe_limit_ug_day = 13.7;
-  const child_safe_limit_ug_day = 4.8;
-  const adult_exposure_ratio = daily_intake_ug / adult_safe_limit_ug_day;
-  const child_exposure_ratio = daily_intake_ug / child_safe_limit_ug_day;
-  const adult_neuro_prob = 1 / (1 + Math.exp(-2 * (adult_exposure_ratio - 1)));
-  const child_neuro_prob = 1 / (1 + Math.exp(-2 * (child_exposure_ratio - 1)));
-  const months_to_symptoms_adult = Math.max(6, Math.round(36 / (adult_exposure_ratio || 0.1)));
-  const months_to_symptoms_child = Math.max(3, Math.round(24 / (child_exposure_ratio || 0.1)));
-  const fishing_community_pop = d.fishing_communities * 800;
-  const adults_at_risk = Math.round(fishing_community_pop * 0.65 * adult_neuro_prob);
-  const children_at_risk = Math.round(d.children_under12 * 0.15 * child_neuro_prob);
-  return {
-    fish_mercury_mgkg: Math.round(fish_mercury_mgkg * 100) / 100,
-    daily_intake_ug: Math.round(daily_intake_ug * 100) / 100,
-    adult_exposure_ratio: Math.round(adult_exposure_ratio * 10) / 10,
-    child_exposure_ratio: Math.round(child_exposure_ratio * 10) / 10,
-    adult_neuro_probability_pct: Math.round(adult_neuro_prob * 100),
-    child_neuro_probability_pct: Math.round(child_neuro_prob * 100),
-    months_to_symptoms_adult, months_to_symptoms_child,
-    adults_at_risk, children_at_risk,
-    severity: child_exposure_ratio > 5 ? 'SEVERE — Irreversible neurological damage likely' :
-              child_exposure_ratio > 2 ? 'HIGH — Significant cognitive impairment risk' :
-              child_exposure_ratio > 1 ? 'MODERATE — Subclinical neurological effects' : 'LOW — Within tolerable range',
-    clinical_presentations: [
-      child_exposure_ratio > 3 ? 'Severe cognitive impairment and learning disabilities' : 'Mild cognitive effects',
-      adult_exposure_ratio > 2 ? 'Peripheral neuropathy — numbness in hands and feet' : 'Subclinical neurological changes',
-      child_exposure_ratio > 4 ? 'Cerebral palsy risk in foetal exposure cases' : 'Developmental delay risk',
-      'Visual field constriction in high-exposure adults',
-    ],
-  };
+function makeRegionIcon(risk,sites,isActive){
+  const color=isActive?'#00C8F0':getRiskColor(risk);
+  const size=isActive?38:risk==='CRITICAL'?32:risk==='HIGH'?26:22;
+  const glow=isActive?`0 0 20px #00C8F0, 0 0 40px #00C8F088`:`0 0 ${risk==='CRITICAL'?14:8}px ${color}88`;
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:${size}px;height:${size}px;background:${color};border:2.5px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:${size>26?11:9}px;font-weight:bold;box-shadow:${glow};cursor:pointer;transition:all 0.3s;">${sites}</div>`,
+    iconSize:[size,size],iconAnchor:[size/2,size/2],
+  });
 }
 
-function predictPandemicEmergence(d) {
-  const forest_loss_factor = Math.max(0, (60 - d.forest_cover_pct) / 60);
-  const deforestation_acceleration = d.deforestation_rate / 2.0;
-  const wildlife_interface = forest_loss_factor * deforestation_acceleration;
-  const forest_pressure = Math.min(d.pop_density / 200, 1) * (1 - d.forest_cover_pct / 100);
-  const annual_spillover_rate = wildlife_interface * forest_pressure * 0.15;
-  const spillover_prob_12m = (1 - Math.exp(-annual_spillover_rate)) * 100;
-  const sanitation_amplifier = 1 + (1 - d.sanitation_pct / 100) * 2;
-  const density_amplifier = 1 + (d.pop_density / 1000);
-  const epidemic_prob = Math.min(spillover_prob_12m * 0.08 * sanitation_amplifier * density_amplifier, 45);
-  const pathogen_type = d.forest_cover_pct > 40 ? 'Viral haemorrhagic fever (Ebola-type)' :
-                        d.forest_cover_pct > 25 ? 'Respiratory zoonosis (influenza-type)' : 'Arboviral disease (dengue/yellow fever-type)';
-  const warning_indicators = [];
-  if (d.deforestation_rate > 2.5) warning_indicators.push('Deforestation rate exceeding critical threshold');
-  if (d.forest_cover_pct < 30)    warning_indicators.push('Forest cover below minimum viable wildlife corridor');
-  if (d.pop_density > 100)        warning_indicators.push('Population density amplifying transmission risk');
-  return {
-    spillover_probability_12m: Math.round(spillover_prob_12m * 10) / 10,
-    epidemic_amplification_prob: Math.round(epidemic_prob * 10) / 10,
-    annual_spillover_rate: Math.round(annual_spillover_rate * 1000) / 1000,
-    wildlife_interface_index: Math.round(wildlife_interface * 100) / 100,
-    pathogen_type, lead_time_advantage: '6 to 18 months before first human case detected by standard surveillance',
-    warning_indicators: warning_indicators.length > 0 ? warning_indicators : ['No critical thresholds exceeded'],
-    deforestation_threshold: d.deforestation_rate > 3.0 ? 'EXCEEDED — immediate reforestation needed' : `${(3.0 - d.deforestation_rate).toFixed(1)}% below critical threshold`,
-    recommended_surveillance: [
-      'Monthly wildlife mortality surveys in forest edge zones',
-      'Quarterly serological surveys in forest-adjacent communities',
-      'Real-time deforestation monitoring with acoustic sensors',
-    ],
-  };
+function makeTownIcon(type,name){
+  const colors={capital:'#00C8F0',city:'#8B5CF6',mining:'#F07020',town:'rgba(216,232,255,0.7)'};
+  const col=colors[type]||colors.town;
+  const dot=type==='capital'?8:type==='city'?6:type==='mining'?7:4;
+  return L.divIcon({
+    className:'',
+    html:`<div style="display:flex;align-items:center;gap:3px;pointer-events:none;">
+      <div style="width:${dot}px;height:${dot}px;border-radius:50%;background:${col};box-shadow:0 0 6px ${col};flex-shrink:0;"></div>
+      <span style="color:${col};font-size:${type==='capital'?11:type==='city'?10:9}px;font-family:monospace;white-space:nowrap;text-shadow:0 1px 3px #000,0 0 8px #000;font-weight:${type==='capital'||type==='city'?'bold':'normal'};">${name}</span>
+    </div>`,
+    iconSize:[120,16],iconAnchor:[0,8],
+  });
 }
 
-function predictFoodSecurity(d) {
-  const optimal_rainfall_mm = 1400;
-  const rainfall_adequacy = Math.min(d.rainfall_mm / optimal_rainfall_mm, 1);
-  const contamination_crop_stress = Math.min(d.arsenic_mgl / 0.02, 1);
-  const crop_stress_index = (1 - rainfall_adequacy) * 0.5 + contamination_crop_stress * 0.5;
-  const yield_reduction_pct = Math.min(Math.round(crop_stress_index * crop_stress_index * 85), 85);
-  const base_food_security = 1 - (d.sanitation_pct / 100) * 0.3;
-  const food_insecurity_prob = Math.min(crop_stress_index * base_food_security * 100, 95);
-  const warning_months = Math.round(6 + (1 - crop_stress_index) * 6);
-  const agricultural_population = d.population * 0.42;
-  const food_insecure_people = Math.round(agricultural_population * (food_insecurity_prob / 100));
-  const price_spike_pct = Math.round(yield_reduction_pct * 1.8);
-  return {
-    crop_stress_index: Math.round(crop_stress_index * 100) / 100,
-    yield_reduction_pct, food_insecurity_probability: Math.round(food_insecurity_prob * 10) / 10,
-    warning_months_ahead: warning_months, people_at_risk: food_insecure_people,
-    price_spike_prediction_pct: price_spike_pct,
-    rainfall_adequacy_pct: Math.round(rainfall_adequacy * 100),
-    cocoa_risk: d.arsenic_mgl > 0.015 ? 'HIGH — arsenic contamination reduces bean quality and export certification' :
-                rainfall_adequacy < 0.7  ? 'MEDIUM — rainfall deficit stressing cocoa trees' : 'LOW',
-    maize_risk: crop_stress_index > 0.5  ? 'HIGH — dual stress from contamination and rainfall' : 'MEDIUM',
-    ipc_phase: food_insecurity_prob > 70 ? 'IPC Phase 4 — Emergency' :
-               food_insecurity_prob > 50 ? 'IPC Phase 3 — Crisis' :
-               food_insecurity_prob > 30 ? 'IPC Phase 2 — Stressed' : 'IPC Phase 1 — Minimal',
-    interventions_needed: [
-      yield_reduction_pct > 40 ? 'Emergency food import procurement — 6 months ahead of crisis' : 'Monitor crop development',
-      price_spike_pct > 50 ? 'Strategic grain reserve release to stabilise prices' : 'Maintain price monitoring',
-    ],
-  };
+function makeHotspotIcon(severity){
+  const size=8+severity*1.5;
+  const opacity=0.4+severity*0.05;
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:${size}px;height:${size}px;background:rgba(232,58,58,${opacity});border:1px solid #E83A3A;border-radius:50%;box-shadow:0 0 ${severity*2}px rgba(232,58,58,0.6);animation:pulse 2s infinite;"></div>`,
+    iconSize:[size,size],iconAnchor:[size/2,size/2],
+  });
 }
 
-function predictEcosystemTippingPoint(d) {
-  const forest_state = d.forest_cover_pct / 100;
-  const degradation_velocity = d.deforestation_rate / 100;
-  const resilience_index = Math.max(0, (forest_state - 0.3) / 0.7);
-  const collapse_threshold = 0.15;
-  const years_to_collapse = forest_state > collapse_threshold ?
-    Math.round((forest_state - collapse_threshold) / degradation_velocity) : 0;
-  const recovery_probability = resilience_index > 0.5 ? 'HIGH — ecosystem can self-recover with intervention' :
-                                resilience_index > 0.2 ? 'MEDIUM — recovery possible but requires major investment' :
-                                resilience_index > 0   ? 'LOW — recovery requires sustained 20+ year programme' :
-                                                          'CRITICAL — past tipping point';
-  const ecosystem_value_annual = Math.round(d.forest_cover_pct * d.population * 0.0008 + d.forest_cover_pct * 1200 + d.fishing_communities * 450000);
-  const warning_signals = [];
-  if (resilience_index < 0.4)     warning_signals.push('Critical slowing down detected — ecosystem losing resilience');
-  if (d.deforestation_rate > 2.5) warning_signals.push('Deforestation rate accelerating beyond recovery capacity');
-  if (d.mercury_mgl > 0.05)       warning_signals.push('Chemical contamination suppressing ecological recovery');
-  if (d.forest_cover_pct < 25)    warning_signals.push('Forest cover below minimum viable threshold');
-  return {
-    resilience_index: Math.round(resilience_index * 100) / 100,
-    years_to_tipping_point: years_to_collapse,
-    current_forest_cover_pct: d.forest_cover_pct,
-    collapse_threshold_pct: 15,
-    recovery_probability,
-    ecosystem_services_value: `USD ${ecosystem_value_annual.toLocaleString()} per year`,
-    annual_services_being_lost: `USD ${Math.round(ecosystem_value_annual * degradation_velocity * 0.8).toLocaleString()} per year`,
-    warning_signals: warning_signals.length > 0 ? warning_signals : ['System stable — no critical thresholds exceeded'],
-    intervention_window: years_to_collapse > 10 ? `${years_to_collapse} years — sufficient time for planned intervention` :
-                         years_to_collapse > 5  ? `${years_to_collapse} years — urgent intervention needed` :
-                         years_to_collapse > 0  ? `${years_to_collapse} years — EMERGENCY intervention required now` : 'Tipping point reached',
-    carbon_at_stake: `${Math.round(d.forest_cover_pct * 0.8)} million tonnes CO2 equivalent`,
-  };
+// Click-anywhere handler component
+function ClickHandler({onMapClick}){
+  useMapEvents({click:(e)=>{onMapClick(e.latlng.lat,e.latlng.lng);}});
+  return null;
 }
 
-function predictConflict(d) {
-  const water_quality_stress = Math.min(d.turbidity_ntu / 100 + d.mercury_mgl / 0.01, 10) / 10;
-  const water_access_stress = 1 - (d.sanitation_pct / 100);
-  const mining_pressure = Math.min(d.illegal_sites / 20, 1);
-  const population_pressure = Math.min(d.pop_density / 300, 1);
-  const conflict_index = (water_quality_stress * 0.35 + water_access_stress * 0.25 + mining_pressure * 0.25 + population_pressure * 0.15);
-  const conflict_probability = (1 / (1 + Math.exp(-6 * (conflict_index - 0.5)))) * 100;
-  const months_to_escalation = Math.max(2, Math.round(18 * (1 - conflict_index)));
-  const conflict_type = mining_pressure > 0.6 ? 'Community vs. mining operators' :
-                        water_quality_stress > 0.7 ? 'Inter-community water access disputes' : 'Land use and livelihood competition';
-  return {
-    conflict_probability_pct: Math.round(conflict_probability * 10) / 10,
-    conflict_index: Math.round(conflict_index * 100) / 100,
-    months_to_escalation, conflict_type,
-    water_stress_contribution: Math.round(water_quality_stress * 100),
-    mining_pressure_contribution: Math.round(mining_pressure * 100),
-    flashpoint_communities: Math.round(conflict_index * d.fishing_communities * 0.4),
-    de_escalation_interventions: [
-      water_quality_stress > 0.6 ? 'Emergency clean water provision to highest-risk communities' : 'Water quality monitoring',
-      mining_pressure > 0.5 ? 'Rapid enforcement action against illegal operators' : 'Regular compliance monitoring',
-      'Community dialogue facilitation in flashpoint zones',
-    ],
-  };
-}
-
-// ============================================================
-// DETECT-LIVE — Full satellite-based environmental detection
-// No hardcoded baselines — everything from satellite indices
-// ============================================================
-
-app.post('/detect-live', async (req, res) => {
-  const { lat, lng, name, radius } = req.body;
-
-  if (!lat || !lng) {
-    return res.status(400).json({ error: 'lat and lng are required' });
-  }
-
-  if (!EE_READY) {
-    return res.json({
-      status: 'EARTH ENGINE NOT CONNECTED',
-      message: 'gee-key.json missing or Earth Engine failed to initialize.',
-      lat, lng
-    });
-  }
-
-  const radiusMeters = (radius || 5) * 1000;
-  const locationName = name || `${parseFloat(lat).toFixed(4)}°N, ${Math.abs(parseFloat(lng)).toFixed(4)}°W`;
-
-  try {
-    const raw = await getLiveDetection(parseFloat(lat), parseFloat(lng), radiusMeters);
-
-    const intel = interpretDetection(raw, (radius || 5));
-
-    const currentDate = new Date(raw.current_date).toISOString().split('T')[0];
-    const baselineDate = new Date(raw.baseline_date).toISOString().split('T')[0];
-
-    res.json({
-      location: locationName,
-      coordinates: { lat: parseFloat(lat), lng: parseFloat(lng) },
-      analysis_radius_km: radius || 5,
-      status: 'CONNECTED — REAL SATELLITE DATA',
-      timestamp: new Date().toISOString(),
-
-      imagery: {
-        current_image_date: currentDate,
-        baseline_image_date: baselineDate,
-        change_period: `${baselineDate} to ${currentDate}`,
-        cloud_cover_pct: Math.round((raw.current_cloud || 0) * 100) / 100,
-        satellite: 'Sentinel-2 MSI (10m resolution)',
-        source: 'ESA Copernicus Programme via Google Earth Engine',
-      },
-
-      ...intel,
-
-      methodology_note: `This analysis uses 7 Sentinel-2 spectral indices to detect environmental change:
-1. NDVI (Normalized Difference Vegetation Index) — vegetation health
-2. BSI (Bare Soil Index) — exposed/disturbed earth detection
-3. BSI Change — new clearing since ${baselineDate}
-4. MNDWI (Modified Normalized Difference Water Index) — water turbidity
-5. Iron Oxide Ratio (Red/Blue) — mine waste/tailings detection
-6. Clay Mineral Ratio (SWIR1/SWIR2) — geological disturbance
-7. NDVI Change — vegetation loss since baseline
-
-All values are satellite-derived. Water contamination and health risk values are proxies calculated from spectral signatures, NOT direct chemical or clinical measurements.`,
-
-      what_to_do_next: [
-        intel.mining_detection.score > 50 ? 'Report location to Ghana EPA enforcement unit for field verification' : 'Monitor location — schedule next satellite check in 30 days',
-        intel.water_contamination.score > 50 ? 'Commission water quality testing from CSIR Water Research Institute' : 'Water appears low-risk from satellite — confirm with periodic testing',
-        intel.health_risk.outbreak_probability_30days_pct > 30 ? 'Alert community health workers — prepare ORS and water treatment supplies' : 'No immediate health action required from satellite data',
-        'Document this analysis using QGIF Digital Lawyer feature for evidence record',
-      ]
-    });
-
-  } catch (e) {
-    res.json({
-      location: locationName,
-      status: 'ERROR',
-      message: e.message,
-      lat, lng
-    });
-  }
-});
-
-// ============================================================
-// HISTORICAL TIMELINE — Year-by-year satellite comparison
-// Shows how degradation has changed from 2020 to present
-// ============================================================
-
-app.post('/historical-timeline', async (req, res) => {
-  const { lat, lng, name } = req.body;
-  if (!lat || !lng) return res.status(400).json({ error: 'lat and lng required' });
-  if (!EE_READY) return res.json({ status: 'EARTH ENGINE NOT CONNECTED' });
-
-  const years = [2020, 2021, 2022, 2023, 2024, 2025];
-  const results = [];
-
-  for (const year of years) {
-    try {
-      const point = ee.Geometry.Point([parseFloat(lng), parseFloat(lat)]);
-      const area = point.buffer(5000);
-      const startDate = `${year}-01-01`;
-      const endDate = `${year}-12-31`;
-
-      const image = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-        .filterBounds(area)
-        .filterDate(startDate, endDate)
-        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
-        .sort('CLOUDY_PIXEL_PERCENTAGE')
-        .first();
-
-      const ndvi = image.normalizedDifference(['B8', 'B4']);
-      const mndwi = image.normalizedDifference(['B3', 'B11']);
-      const waterMask = mndwi.lte(0.1);
-      const ndviLand = ndvi.updateMask(waterMask);
-      const bsi = image.expression(
-        '((Red+SWIR1)-(NIR+Blue))/((Red+SWIR1)+(NIR+Blue))',
-        {Red:image.select('B4'),SWIR1:image.select('B11'),NIR:image.select('B8'),Blue:image.select('B2')}
-      ).rename('bsi').updateMask(waterMask);
-
-      const stats = ee.Dictionary({
-        ndvi_mean: ndviLand.reduceRegion({reducer:ee.Reducer.mean(),geometry:area,scale:30,maxPixels:1e9}).get('nd'),
-        ndvi_p10:  ndviLand.reduceRegion({reducer:ee.Reducer.percentile([10]),geometry:area,scale:30,maxPixels:1e9}).get('nd'),
-        bsi_mean:  bsi.reduceRegion({reducer:ee.Reducer.mean(),geometry:area,scale:30,maxPixels:1e9}).get('bsi'),
-        date: image.get('system:time_start'),
-      });
-
-      const raw = await new Promise((resolve, reject) => {
-        ee.data.computeValue(stats, (result, err) => {
-          if (err) reject(new Error(err));
-          else resolve(result);
-        });
-      });
-
-      const ndviMean = Math.round((raw.ndvi_mean||0) * 1000) / 1000;
-      const ndviP10 = Math.round((raw.ndvi_p10||0) * 1000) / 1000;
-      const bsiMean = Math.round((raw.bsi_mean||0) * 1000) / 1000;
-      const degradationGap = Math.round((ndviMean - ndviP10) * 1000) / 1000;
-      const forestCover = Math.max(5, Math.min(95, Math.round(((ndviMean - 0.15) / 0.65) * 90)));
-      const miningScore = Math.min(100, Math.max(0, Math.round(
-        (Math.max(0, (bsiMean + 0.5) / 1.0) * 60 * 0.5) +
-        (Math.min(1, Math.max(0, degradationGap * 2)) * 100 * 0.5)
-      )));
-
-      results.push({
-        year,
-        satellite_date: raw.date ? new Date(raw.date).toISOString().split('T')[0] : `${year}`,
-        ndvi_mean: ndviMean,
-        ndvi_p10: ndviP10,
-        bsi_mean: bsiMean,
-        degradation_gap: degradationGap,
-        forest_cover_pct: forestCover,
-        mining_score: miningScore,
-        status: 'OK',
-      });
-
-      console.log(`  Timeline ${year}: NDVI=${ndviMean}, gap=${degradationGap}, mining=${miningScore}`);
-
-    } catch(e) {
-      results.push({ year, status: 'NO_DATA', error: e.message });
-      console.log(`  Timeline ${year}: NO DATA — ${e.message}`);
+function FlyToHandler({center}){
+  const map=useMapEvents({});
+  useEffect(()=>{
+    if(center&&center.length>=2){
+      map.flyTo([center[0],center[1]],center[2]||13,{duration:1.2});
     }
-  }
+  },[center,map]);
+  return null;
+}
 
-  // Calculate trend
-  const validResults = results.filter(r => r.status === 'OK');
-  let trend = null;
-  if (validResults.length >= 2) {
-    const first = validResults[0];
-    const last = validResults[validResults.length - 1];
-    trend = {
-      ndvi_change: Math.round((last.ndvi_mean - first.ndvi_mean) * 1000) / 1000,
-      forest_cover_change: last.forest_cover_pct - first.forest_cover_pct,
-      mining_score_change: last.mining_score - first.mining_score,
-      degradation_change: Math.round((last.degradation_gap - first.degradation_gap) * 1000) / 1000,
-      years_covered: `${first.year}–${last.year}`,
-      direction: last.ndvi_mean < first.ndvi_mean ? 'DEGRADING' : 'RECOVERING',
-      assessment: last.ndvi_mean < first.ndvi_mean
-        ? `Vegetation has declined by ${Math.abs(Math.round((last.ndvi_mean-first.ndvi_mean)*100))}% since ${first.year}. Mining activity signature has ${last.mining_score > first.mining_score ? 'increased' : 'decreased'}.`
-        : `Vegetation has improved by ${Math.round((last.ndvi_mean-first.ndvi_mean)*100)}% since ${first.year}.`,
+function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSearchQuery,mapCenter,setMapCenter,showHotspots,setShowHotspots,showTowns,setShowTowns,clickedCoord,satLoading,satData}){
+  const [hovered,setHovered]=useState(null); // eslint-disable-line
+
+  // Desktop Leaflet map only
+  const MAP_REGIONS=[
+    {name:"Upper West Region",risk:"LOW",d:"M130,58 L285,58 L295,100 L275,162 L245,202 L205,222 L165,212 L135,192 L115,152 L115,100 Z"},
+    {name:"Upper East Region",risk:"LOW",d:"M285,58 L445,58 L455,82 L465,132 L445,182 L405,202 L365,212 L325,202 L295,182 L275,162 L295,100 Z"},
+    {name:"Northern Region",risk:"LOW",d:"M115,152 L135,192 L165,212 L205,222 L245,202 L275,162 L295,182 L325,202 L365,212 L405,202 L445,182 L465,202 L475,262 L455,322 L425,362 L385,382 L345,372 L305,362 L265,352 L225,342 L185,322 L155,292 L133,252 L118,212 Z"},
+    {name:"Brong-Ahafo",risk:"MEDIUM",d:"M133,252 L155,292 L185,322 L225,342 L265,352 L305,362 L345,372 L385,382 L425,362 L455,372 L475,412 L465,452 L435,472 L395,462 L355,452 L315,442 L275,432 L235,422 L195,402 L165,382 L143,352 L128,312 Z"},
+    {name:"Ashanti Region",risk:"MEDIUM",d:"M195,402 L235,422 L275,432 L315,442 L355,452 L395,462 L435,472 L455,512 L445,552 L415,572 L375,562 L335,552 L295,542 L255,532 L215,512 L188,482 L183,452 Z"},
+    {name:"Eastern Region",risk:"HIGH",d:"M335,552 L375,562 L415,572 L455,562 L475,592 L485,632 L465,662 L435,672 L405,662 L375,642 L345,622 L323,594 L318,568 Z"},
+    {name:"Oti Region",risk:"MEDIUM",d:"M455,322 L475,262 L505,222 L545,192 L575,212 L585,272 L575,342 L555,412 L535,472 L515,512 L495,552 L485,582 L485,632 L465,662 L435,672 L415,572 L455,512 L455,462 L475,412 L465,362 Z"},
+    {name:"Western Region",risk:"CRITICAL",d:"M143,472 L188,482 L215,512 L255,532 L295,542 L318,568 L323,594 L313,624 L293,652 L263,672 L233,682 L203,672 L173,642 L153,612 L138,572 L128,532 L133,492 Z"},
+    {name:"Central Region",risk:"HIGH",d:"M313,624 L343,622 L375,642 L405,662 L415,692 L395,722 L365,732 L335,722 L308,702 L298,672 L293,652 Z"},
+    {name:"Greater Accra",risk:"MEDIUM",d:"M415,692 L435,672 L465,662 L495,672 L505,702 L495,727 L468,742 L442,737 L418,722 Z"},
+    {name:"Volta Region",risk:"LOW",d:"M455,362 L475,412 L455,462 L455,512 L415,572 L395,462 L435,472 L455,452 L465,372 Z"},
+    {name:"Bono East",risk:"MEDIUM",d:"M425,362 L455,372 L465,452 L435,472 L395,462 L355,452 L345,372 Z"},
+  ];
+
+  const SF={CRITICAL:"rgba(232,58,58,0.12)",HIGH:"rgba(240,112,32,0.10)",MEDIUM:"rgba(245,200,66,0.08)",LOW:"rgba(0,232,122,0.05)"};
+  const SS={CRITICAL:"rgba(232,58,58,0.5)",HIGH:"rgba(240,112,32,0.4)",MEDIUM:"rgba(245,200,66,0.3)",LOW:"rgba(0,232,122,0.25)"};
+
+  // On mobile use SVG map, on desktop use Leaflet
+  // Desktop — full Leaflet satellite map
+  const mapRef=useRef(null);
+  return(
+    <div style={{position:"relative",width:"100%",height:"100%",background:BG}}>
+      <style>{`
+        .qgif-tooltip{background:#08162A!important;border:1px solid rgba(0,200,240,0.4)!important;color:#D8E8FF!important;font-family:monospace!important;font-size:11px!important;padding:6px 10px!important;border-radius:6px!important;}
+        .leaflet-container{background:#030A14!important;}
+        .leaflet-control-attribution{background:rgba(8,22,42,0.85)!important;color:#4A6880!important;font-size:9px!important;}
+        .leaflet-control-attribution a{color:#00C8F0!important;}
+        .leaflet-control-zoom a{background:#08162A!important;color:#00C8F0!important;border-color:rgba(0,200,240,0.2)!important;}
+      `}</style>
+
+      {/* TOP TOOLBAR */}
+      <div style={{position:"absolute",top:0,left:0,right:0,zIndex:1000,background:"rgba(3,10,20,.95)",borderBottom:"1px solid rgba(0,200,240,0.1)",padding:"6px 10px",display:"flex",gap:6,alignItems:"center"}}>
+        <div style={{display:"flex",gap:0,flex:1,minWidth:0}}>
+          <input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter"){const q=searchQuery.toLowerCase();const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));const reg=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));if(town){setMapCenter([town.lat,town.lng,13]);onCoordClick(town.lat,town.lng,town.name);}else if(reg){setMapCenter([reg[1].lat,reg[1].lng,9]);onRegionClick(reg[0]);}}}}
+            placeholder="Search any town or region..."
+            style={{flex:1,background:P2,border:"1px solid rgba(0,200,240,0.2)",borderRight:"none",borderRadius:"6px 0 0 6px",padding:"6px 10px",color:TEXT,fontSize:12,outline:"none",fontFamily:FB}}/>
+          <button onClick={()=>{const q=searchQuery.toLowerCase();const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));const reg=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));if(town){setMapCenter([town.lat,town.lng,13]);onCoordClick(town.lat,town.lng,town.name);}else if(reg){setMapCenter([reg[1].lat,reg[1].lng,9]);onRegionClick(reg[0]);}}}
+            style={{background:CYAN,border:"none",borderRadius:"0 6px 6px 0",padding:"6px 12px",color:BG,fontSize:12,fontWeight:700,cursor:"pointer"}}>Go</button>
+        </div>
+        <button onClick={()=>setShowHotspots(!showHotspots)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${showHotspots?RED:BORDER2}`,background:showHotspots?`${RED}15`:"transparent",color:showHotspots?RED:MUTED,fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}>Hotspots</button>
+        <button onClick={()=>setShowTowns(!showTowns)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${showTowns?PURPLE:BORDER2}`,background:showTowns?`${PURPLE}15`:"transparent",color:showTowns?PURPLE:MUTED,fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}>Towns</button>
+        <div style={{fontFamily:FM,fontSize:10,color:CYAN,whiteSpace:"nowrap"}}>{activeRegion||clickedCoord||"Click map"}</div>
+      </div>
+
+      {/* LIVE SATELLITE STATUS */}
+      {(satLoading||satData)&&(
+        <div style={{position:"absolute",top:48,left:12,zIndex:1000,background:"rgba(8,22,42,0.96)",border:`1px solid ${satData?.earth_engine_status?.includes("CONNECTED")?GREEN:BORDER}`,borderRadius:8,padding:"8px 12px",maxWidth:260}}>
+          {satLoading&&<div style={{fontFamily:FM,fontSize:9,color:AMBER,display:"flex",alignItems:"center",gap:6}}><span style={{width:6,height:6,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/>Querying Earth Engine...</div>}
+          {!satLoading&&satData&&satData.earth_engine_status?.includes("CONNECTED")&&(
+            <div>
+              <div style={{fontFamily:FM,fontSize:9,color:GREEN,marginBottom:5,display:"flex",alignItems:"center",gap:5}}><span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block"}}/>LIVE SENTINEL-2 · {satData.satellite_date}</div>
+              <div style={{display:"flex",gap:10}}>
+                <div><div style={{fontFamily:FM,fontSize:8,color:MUTED}}>NDVI</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:12,fontWeight:700,color:satData.ndvi_mean>0.5?GREEN:AMBER}}>{satData.ndvi_mean}</div></div>
+                <div><div style={{fontFamily:FM,fontSize:8,color:MUTED}}>DEGRADATION</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:12,fontWeight:700,color:satData.degradation_gap>0.25?RED:GREEN}}>{satData.degradation_gap}</div></div>
+                <div><div style={{fontFamily:FM,fontSize:8,color:MUTED}}>WATER</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:12,fontWeight:700,color:CYAN}}>{satData.water_fraction_pct}%</div></div>
+              </div>
+              {satData.degradation_signal?.startsWith("YES")&&<div style={{fontFamily:FM,fontSize:9,color:RED,marginTop:4}}>LAND DEGRADATION DETECTED</div>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* MAP */}
+      <div style={{position:"absolute",top:42,left:0,right:0,bottom:36}}>
+        <MapContainer center={[7.9465,-1.0232]} zoom={7} minZoom={6} maxZoom={19} style={{width:"100%",height:"100%"}} zoomControl={true} ref={mapRef}>
+          <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution="© Esri, Maxar" maxZoom={19}/>
+          <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" attribution="" maxZoom={19} opacity={0.8}/>
+          <ClickHandler onMapClick={(lat,lng)=>onCoordClick(lat,lng,null)}/>
+          <FlyToHandler center={mapCenter}/>
+          {Object.entries(REGION_COORDS).map(([name,data])=>(
+            <Marker key={name} position={[data.lat,data.lng]} icon={makeRegionIcon(data.risk,data.sites,activeRegion===name)} eventHandlers={{click:()=>onRegionClick(name)}}>
+              <Tooltip direction="top" className="qgif-tooltip"><b style={{color:getRiskColor(data.risk)}}>{name}</b><br/>Risk: <b>{data.risk}</b> · Sites: <b>{data.sites}</b><br/>Mercury: <b>{data.mercury} mg/L</b><br/><span style={{color:CYAN,fontSize:10}}>Click for full intelligence</span></Tooltip>
+            </Marker>
+          ))}
+          {showTowns&&GHANA_TOWNS.map(t=>(<Marker key={t.name} position={[t.lat,t.lng]} icon={makeTownIcon(t.type,t.name)} eventHandlers={{click:()=>onCoordClick(t.lat,t.lng,t.name)}}><Tooltip direction="top" className="qgif-tooltip"><b>{t.name}</b><br/>Pop: {t.pop.toLocaleString()}<br/>{t.region}</Tooltip></Marker>))}
+          {showHotspots&&MINING_HOTSPOTS.map((h,i)=>(<Marker key={i} position={[h.lat,h.lng]} icon={makeHotspotIcon(h.severity)} eventHandlers={{click:()=>onCoordClick(h.lat,h.lng,h.name)}}><Tooltip direction="top" className="qgif-hotspot"><b style={{color:RED}}>{h.name}</b><br/>Severity: {h.severity}/10<br/>{h.desc}</Tooltip></Marker>))}
+        </MapContainer>
+      </div>
+
+      {/* LEGEND */}
+      <div style={{position:"absolute",bottom:42,right:12,zIndex:1000,background:"rgba(8,22,42,.96)",border:"1px solid rgba(0,200,240,0.1)",borderRadius:8,padding:"10px 14px"}}>
+        <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:8,letterSpacing:".08em"}}>RISK INDEX</div>
+        {[[RED,"Critical"],[AMBER,"High"],["#F5C842","Medium"],[GREEN,"Low"]].map(([col,l])=>(
+          <div key={l} style={{display:"flex",alignItems:"center",gap:7,fontSize:10,fontFamily:"-apple-system,sans-serif",color:TEXT2,marginBottom:5}}>
+            <div style={{width:8,height:8,borderRadius:"50%",background:col,boxShadow:`0 0 5px ${col}`}}/>{l}
+          </div>
+        ))}
+        <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginTop:7}}>Numbers = illegal sites</div>
+      </div>
+
+      {/* STATUS BAR */}
+      <div style={{position:"absolute",bottom:0,left:0,right:0,height:36,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",background:"rgba(3,10,20,.95)",borderTop:"1px solid rgba(0,200,240,0.1)",zIndex:1000}}>
+        <div style={{display:"flex",gap:16}}>
+          {[["Satellite","Sentinel-2",CYAN],["Towns",`${GHANA_TOWNS.length} mapped`,PURPLE],["Hotspots",`${MINING_HOTSPOTS.length} active`,RED]].map(([k,v,col])=>(
+            <div key={k} style={{fontFamily:FM,fontSize:9,color:MUTED}}>{k} <span style={{color:col}}>{v}</span></div>
+          ))}
+        </div>
+        <div style={{fontFamily:FM,fontSize:9,color:MUTED}}>Click anywhere for live satellite analysis</div>
+      </div>
+    </div>
+  );
+}
+
+function QuantumTab({activeRegion,setActiveRegion,qData,qLoading,qType,setQType,runQuantum}){
+  return(
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Quantum Optimizer Engine</div>
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        {[{key:"land",label:"QAOA Land Use"},{key:"route",label:"Quantum Walk Route"}].map(q=>(
+          <button key={q.key} onClick={()=>{setQType(q.key);if(activeRegion)runQuantum(activeRegion,q.key);}}
+            style={{padding:"8px 16px",borderRadius:8,border:`1px solid ${qType===q.key?CYAN:BORDER}`,background:qType===q.key?`${CYAN}14`:"transparent",color:qType===q.key?CYAN:MUTED,cursor:"pointer",fontSize:13,fontFamily:FB}}>{q.label}</button>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
+        {REGIONS.slice(0,6).map(r=>(
+          <button key={r.name} onClick={()=>{setActiveRegion(r.name);runQuantum(r.name,qType);}} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}10`:"transparent",color:activeRegion===r.name?CYAN:MUTED,cursor:"pointer",fontSize:12,fontFamily:FB}}>{r.name}</button>
+        ))}
+      </div>
+      {!activeRegion&&!qData&&<div style={{textAlign:"center",padding:"60px 20px"}}><div style={{fontSize:52,opacity:.12}}>Q</div><div style={{fontFamily:FH,fontSize:16,color:"rgba(216,232,255,.22)",fontWeight:"normal",marginTop:12}}>Select a region above</div></div>}
+      {qLoading&&<Spinner label="Running quantum algorithm..."/>}
+      {!qLoading&&qData&&!qData._error&&(
+        <div>
+          <Card>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+              <Tag label={qData.algorithm} color={CYAN}/>
+              {qData.qubits&&<Tag label={`${qData.qubits} qubits`} color={PURPLE}/>}
+              {qData.iterations&&<Tag label={`${qData.iterations} iterations`} color={GREEN}/>}
+            </div>
+            <InfoBox label="ALGORITHM" value={qData.explanation}/>
+          </Card>
+          {qType==="land"&&qData.optimalAllocation&&(
+            <Card>
+              {qData.optimalAllocation.map((item,i)=>{
+                const cols=[CYAN,GREEN,RED,AMBER,PURPLE];
+                return(
+                  <div key={i} style={{marginBottom:14}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                      <span style={{fontFamily:FB,fontSize:13,color:TEXT}}>{item.type}</span>
+                      <span style={{fontFamily:FB,fontSize:18,fontWeight:700,color:cols[i]}}>{item.percentage}%</span>
+                    </div>
+                    <div style={{height:8,background:"rgba(255,255,255,.05)",borderRadius:4,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${item.percentage}%`,background:cols[i],borderRadius:4}}/>
+                    </div>
+                  </div>
+                );
+              })}
+              <InfoBox label="QUANTUM SPEEDUP" value={qData.quantumSpeedup} color={GREEN}/>
+            </Card>
+          )}
+          {qType==="route"&&qData.optimizedRoute&&(
+            <Card>
+              <MetricGrid items={[["Distance",`${qData.totalDistance} km`,CYAN],["Saved",`${qData.distanceSaved} km`,GREEN],["Time",qData.estimatedTime,AMBER]]}/>
+              {qData.optimizedRoute.map((stop,i)=>(
+                <div key={i} style={{display:"flex",gap:12,padding:"10px 12px",background:P2,borderRadius:8,marginBottom:8}}>
+                  <div style={{width:26,height:26,borderRadius:"50%",flexShrink:0,background:`${stop.severity>=9?RED:AMBER}18`,border:`1px solid ${stop.severity>=9?RED:AMBER}`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:FB,fontSize:12,fontWeight:700,color:stop.severity>=9?RED:AMBER}}>{stop.order}</div>
+                  <div style={{flex:1}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                      <span style={{fontFamily:FB,fontSize:13,color:TEXT}}>{stop.siteName}</span>
+                      <Tag label={stop.action} color={stop.action==="ARREST & SEIZE"?RED:AMBER}/>
+                    </div>
+                    <div style={{fontFamily:FM,fontSize:10,color:MUTED}}>{stop.coordinates} · Severity {stop.severity}/10</div>
+                  </div>
+                </div>
+              ))}
+            </Card>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScenarioTab({scRegion,setScRegion,scScenario,setScScenario,scIntensity,setScIntensity,scData,scLoading,runScenario}){
+  return(
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Scenario Simulator</div>
+      <Card>
+        <Label text="SELECT REGION"/>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+          {REGIONS.map(r=>(<button key={r.name} onClick={()=>setScRegion(r.name)} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${scRegion===r.name?CYAN:BORDER2}`,background:scRegion===r.name?`${CYAN}10`:"transparent",color:scRegion===r.name?CYAN:MUTED,cursor:"pointer",fontSize:12,fontFamily:FB}}>{r.name}</button>))}
+        </div>
+        <Label text="SELECT SCENARIO"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+          {SCENARIOS.map(s=>(<button key={s.key} onClick={()=>setScScenario(s.key)} style={{padding:"12px 14px",borderRadius:8,border:`1px solid ${scScenario===s.key?CYAN:BORDER}`,background:scScenario===s.key?`${CYAN}10`:P2,cursor:"pointer",textAlign:"left"}}><div style={{fontSize:20,marginBottom:6}}>{s.icon}</div><div style={{fontFamily:FB,fontSize:13,fontWeight:600,color:TEXT,marginBottom:3}}>{s.label}</div><div style={{fontFamily:FB,fontSize:11,color:MUTED,lineHeight:1.5}}>{s.desc}</div></button>))}
+        </div>
+        <Label text={`INTENSITY — ${scIntensity}%`}/>
+        <input type="range" min={10} max={100} value={scIntensity} onChange={e=>setScIntensity(Number(e.target.value))} style={{width:"100%",marginBottom:16,accentColor:CYAN}}/>
+        <button onClick={runScenario} disabled={scLoading} style={{width:"100%",padding:"12px",borderRadius:8,border:"none",background:`linear-gradient(135deg,${CYAN},#0099BB)`,color:BG,fontSize:14,fontFamily:FB,fontWeight:600,cursor:"pointer",opacity:scLoading?.7:1}}>{scLoading?"Simulating...":"Run Scenario Simulation"}</button>
+      </Card>
+      {scLoading&&<Spinner label="Running scenario..."/>}
+      {!scLoading&&scData&&!scData._error&&(
+        <div>
+          <Card>
+            <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:12}}>
+              <span style={{fontSize:26}}>{scData.icon}</span>
+              <div><div style={{fontFamily:FH,fontSize:17,color:TEXT,fontWeight:"normal"}}>{scData.scenario}</div><div style={{fontFamily:FB,fontSize:12,color:MUTED}}>{scData.description}</div></div>
+            </div>
+            <InfoBox label="SUMMARY" value={scData.summary}/>
+          </Card>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+            {[["TOTAL IMPACT",scData.totalEconomicImpact,CYAN],["PEOPLE",scData.peoplAtRisk,GREEN]].map(([l,v,col])=>(
+              <div key={l} style={{background:PANEL,border:`1px solid ${BORDER}`,borderRadius:10,padding:"14px 16px"}}><Label text={l}/><div style={{fontFamily:FB,fontSize:13,fontWeight:700,color:col}}>{v}</div></div>
+            ))}
+          </div>
+          <Label text="OUTCOME ACROSS ALL DIMENSIONS"/>
+          {(scData.outcomes||[]).map((o,i)=>{
+            const ic=IMP_C[o.impact]||CYAN;
+            return(
+              <div key={i} style={{background:PANEL,border:`1px solid ${BORDER}`,borderRadius:10,padding:"14px 16px",marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                  <div><div style={{fontFamily:FB,fontSize:14,fontWeight:600,color:TEXT}}>{o.dimension}</div>
+                    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:4}}>
+                      <span style={{fontFamily:FM,fontSize:10,color:MUTED}}>{o.current}</span>
+                      <span style={{fontFamily:FM,fontSize:10,color:MUTED}}>→</span>
+                      <span style={{fontFamily:FM,fontSize:10,color:ic,fontWeight:600}}>{o.projected}</span>
+                    </div>
+                  </div>
+                  <Tag label={o.impact} color={ic}/>
+                </div>
+                <div style={{fontFamily:FB,fontSize:13,color:TEXT,lineHeight:1.7,padding:"9px 12px",background:P2,borderRadius:7,borderLeft:`3px solid ${ic}35`}}>{o.detail}</div>
+              </div>
+            );
+          })}
+          <div style={{background:`${PURPLE}0a`,border:`1px solid ${PURPLE}22`,borderRadius:10,padding:"14px 16px",marginBottom:20}}>
+            <Label text="RECOMMENDATION" color={PURPLE}/>
+            <div style={{fontFamily:FB,fontSize:13,color:TEXT,lineHeight:1.8}}>{scData.recommendation}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RiskTab({activeRegion,setActiveRegion,riskData,riskLoading,runRisk}){
+  return(
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Quantum Risk Matrix</div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
+        {REGIONS.map(r=>(<button key={r.name} onClick={()=>{setActiveRegion(r.name);runRisk(r.name);}} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}10`:"transparent",color:activeRegion===r.name?CYAN:MUTED,cursor:"pointer",fontSize:12,fontFamily:FB}}>{r.name}</button>))}
+      </div>
+      {!riskData&&!riskLoading&&<div style={{textAlign:"center",padding:"60px 20px"}}><div style={{fontSize:52,opacity:.12}}></div><div style={{fontFamily:FH,fontSize:16,color:"rgba(216,232,255,.22)",fontWeight:"normal",marginTop:12}}>Select a region</div></div>}
+      {riskLoading&&<Spinner label="Running quantum risk scorer..."/>}
+      {!riskLoading&&riskData&&!riskData._error&&(
+        <div>
+          <Card color={(SEV_C[riskData.riskLevel]||BORDER)+"44"}>
+            <div style={{display:"flex",justifyContent:"space-between"}}>
+              <div>
+                <Label text={`QUANTUM RISK — ${(riskData.region||"").toUpperCase()}`}/>
+                <div style={{fontFamily:FH,fontSize:52,color:SEV_C[riskData.riskLevel]||AMBER,lineHeight:1,fontWeight:"normal"}}>{riskData.overallScore}</div>
+                <div style={{fontFamily:FB,fontSize:12,color:MUTED,marginTop:4}}>{riskData.quantumCorrection}</div>
+              </div>
+              <Tag label={riskData.riskLevel} color={SEV_C[riskData.riskLevel]} bg={SEV_BG[riskData.riskLevel]}/>
+            </div>
+          </Card>
+          <Card>
+            <Label text="RISK INDICATORS — CALCULATED FROM REAL MODELS"/>
+            {riskData.indicators?.map((ind,i)=>{
+              const bc=ind.score>75?RED:ind.score>50?AMBER:ind.score>25?"#F5C842":GREEN;
+              return(
+                <div key={i} style={{marginBottom:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+                    <span style={{fontFamily:FB,fontSize:13,color:TEXT}}>{ind.name}</span>
+                    <span style={{fontFamily:FB,fontSize:17,fontWeight:700,color:bc}}>{ind.score}</span>
+                  </div>
+                  <div style={{height:6,background:"rgba(255,255,255,.04)",borderRadius:3,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${ind.score}%`,background:bc,borderRadius:3}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </Card>
+          <Card color={PURPLE+"33"}>
+            <Label text="EXPLANATION" color={PURPLE}/>
+            <div style={{fontFamily:FB,fontSize:13,color:TEXT,lineHeight:1.75}}>{riskData.explanation}</div>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiseaseTab({activeRegion,setActiveRegion,diseaseData,diseaseLoading,runDisease}){
+  return(
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Disease Intelligence Engine</div>
+      <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Six real mathematical models running simultaneously. Every number calculated from environmental measurements.</p>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
+        {REGIONS.map(r=>(<button key={r.name} onClick={()=>{setActiveRegion(r.name);runDisease(r.name);}} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}10`:"transparent",color:activeRegion===r.name?CYAN:MUTED,cursor:"pointer",fontSize:12,fontFamily:FB}}>{r.name}</button>))}
+      </div>
+      {!activeRegion&&!diseaseData&&<div style={{textAlign:"center",padding:"60px 20px"}}><div style={{fontSize:52,opacity:.12}}></div><div style={{fontFamily:FH,fontSize:16,color:"rgba(216,232,255,.22)",fontWeight:"normal",marginTop:12}}>Select a region to run all 6 models</div></div>}
+      {diseaseLoading&&<Spinner label="Running 6 prediction models simultaneously..."/>}
+      {!diseaseLoading&&diseaseData&&!diseaseData._error&&(
+        <div>
+          <Card color={(SEV_C[diseaseData.threat_level]||BORDER)+"44"}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
+              <div>
+                <Label text={`OVERALL THREAT — ${(diseaseData.region||"").toUpperCase()}`}/>
+                <div style={{fontFamily:FH,fontSize:52,color:SEV_C[diseaseData.threat_level]||AMBER,lineHeight:1,fontWeight:"normal"}}>{diseaseData.overall_threat_score}</div>
+              </div>
+              <Tag label={diseaseData.threat_level} color={SEV_C[diseaseData.threat_level]} bg={SEV_BG[diseaseData.threat_level]}/>
+            </div>
+          </Card>
+          {diseaseData.predictions?.waterborne_disease&&(
+            <Card color={RED+"33"}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:3,height:36,background:"#0EA5E9",borderRadius:2,flexShrink:0}}></div><div><div style={{fontFamily:"Inter,'Segoe UI',system-ui,sans-serif",fontSize:14,fontWeight:600,color:TEXT,letterSpacing:"-.01em"}}>Waterborne Disease</div><div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginTop:2}}>Poisson Transmission Model</div></div></div>
+              <MetricGrid items={[["OUTBREAK PROBABILITY",`${diseaseData.predictions.waterborne_disease.probability_pct}%`,RED,diseaseData.predictions.waterborne_disease.disease],["CASES/WEEK",diseaseData.predictions.waterborne_disease.expected_cases_week1?.toLocaleString(),AMBER],["DAYS TO OUTBREAK",diseaseData.predictions.waterborne_disease.days_to_outbreak,RED]]}/>
+            </Card>
+          )}
+          {diseaseData.predictions?.mercury_neurological&&(
+            <Card color={PURPLE+"33"}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:3,height:36,background:"#8B5CF6",borderRadius:2,flexShrink:0}}></div><div><div style={{fontFamily:"Inter,'Segoe UI',system-ui,sans-serif",fontSize:14,fontWeight:600,color:TEXT,letterSpacing:"-.01em"}}>Mercury Neurological Risk</div><div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginTop:2}}>WHO Bioaccumulation Model</div></div></div>
+              <MetricGrid items={[["FISH MERCURY",`${diseaseData.predictions.mercury_neurological.fish_mercury_mgkg} mg/kg`,RED],["CHILDREN AT RISK",diseaseData.predictions.mercury_neurological.children_at_risk?.toLocaleString(),RED],["CHILD EXPOSURE",`${diseaseData.predictions.mercury_neurological.child_exposure_ratio}x`,RED]]}/>
+              <InfoBox label="SEVERITY" value={diseaseData.predictions.mercury_neurological.severity} color={RED}/>
+            </Card>
+          )}
+          {diseaseData.predictions?.pandemic_emergence&&(
+            <Card color={AMBER+"33"}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:3,height:36,background:"#EF4444",borderRadius:2,flexShrink:0}}></div><div><div style={{fontFamily:"Inter,'Segoe UI',system-ui,sans-serif",fontSize:14,fontWeight:600,color:TEXT,letterSpacing:"-.01em"}}>Pandemic Emergence</div><div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginTop:2}}>EcoHealth Spillover Model</div></div></div>
+              <MetricGrid items={[["SPILLOVER PROBABILITY",`${diseaseData.predictions.pandemic_emergence.spillover_probability_12m}%`,AMBER],["EPIDEMIC RISK",`${diseaseData.predictions.pandemic_emergence.epidemic_amplification_prob}%`,RED],["PATHOGEN TYPE",diseaseData.predictions.pandemic_emergence.pathogen_type?.split(" ")[0],AMBER]]}/>
+              <InfoBox label="LEAD TIME" value={diseaseData.predictions.pandemic_emergence.lead_time_advantage} color={GREEN}/>
+            </Card>
+          )}
+          {diseaseData.predictions?.food_security&&(
+            <Card color={GREEN+"33"}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:3,height:36,background:"#F59E0B",borderRadius:2,flexShrink:0}}></div><div><div style={{fontFamily:"Inter,'Segoe UI',system-ui,sans-serif",fontSize:14,fontWeight:600,color:TEXT,letterSpacing:"-.01em"}}>Food Security</div><div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginTop:2}}>IPC / FEWS NET Framework</div></div></div>
+              <MetricGrid items={[["CROP STRESS",diseaseData.predictions.food_security.crop_stress_index,AMBER],["YIELD LOSS",`${diseaseData.predictions.food_security.yield_reduction_pct}%`,RED],["PEOPLE AT RISK",diseaseData.predictions.food_security.people_at_risk?.toLocaleString(),AMBER]]}/>
+            </Card>
+          )}
+          {diseaseData.predictions?.ecosystem_tipping_point&&(
+            <Card color={GREEN+"33"}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:3,height:36,background:"#10B981",borderRadius:2,flexShrink:0}}></div><div><div style={{fontFamily:"Inter,'Segoe UI',system-ui,sans-serif",fontSize:14,fontWeight:600,color:TEXT,letterSpacing:"-.01em"}}>Ecosystem Tipping Point</div><div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginTop:2}}>Scheffer Critical Transition Theory</div></div></div>
+              <MetricGrid items={[["RESILIENCE",diseaseData.predictions.ecosystem_tipping_point.resilience_index,GREEN],["YEARS LEFT",diseaseData.predictions.ecosystem_tipping_point.years_to_tipping_point,RED],["SERVICES VALUE",diseaseData.predictions.ecosystem_tipping_point.ecosystem_services_value,CYAN]]}/>
+              <InfoBox label="INTERVENTION WINDOW" value={diseaseData.predictions.ecosystem_tipping_point.intervention_window} color={RED}/>
+            </Card>
+          )}
+          {diseaseData.predictions?.conflict&&(
+            <Card color={AMBER+"33"}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}><div style={{width:3,height:36,background:"#EAB308",borderRadius:2,flexShrink:0}}></div><div><div style={{fontFamily:"Inter,'Segoe UI',system-ui,sans-serif",fontSize:14,fontWeight:600,color:TEXT,letterSpacing:"-.01em"}}>Conflict Prediction</div><div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginTop:2}}>PRIO Water-Conflict Model</div></div></div>
+              <MetricGrid items={[["CONFLICT PROBABILITY",`${diseaseData.predictions.conflict.conflict_probability_pct}%`,AMBER],["FLASHPOINTS",diseaseData.predictions.conflict.flashpoint_communities,RED],["MONTHS TO ESCALATION",diseaseData.predictions.conflict.months_to_escalation,AMBER]]}/>
+            </Card>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LawyerTab({lawyerData,lawyerLoading,runLawyer}){
+  const [form,setForm]=useState({region:"Western Region",communityName:"",reporterName:"",incidentType:"water_contamination",incidentDescription:""});
+  const update=(k,v)=>setForm(f=>({...f,[k]:v}));
+  return(
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Digital Lawyer — Community Evidence Generator</div>
+      <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Affected communities get automatic court-ready evidence packages from satellite data. Free. Instant. No lawyer needed.</p>
+      <Card>
+        <Label text="COMMUNITY REPORT"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+          <div>
+            <Label text="REGION"/>
+            <select value={form.region} onChange={e=>update("region",e.target.value)} style={{width:"100%",background:P2,border:`1px solid ${BORDER}`,borderRadius:7,padding:"8px 11px",color:TEXT,fontSize:13,fontFamily:FB}}>
+              {REGIONS.map(r=><option key={r.name} value={r.name}>{r.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <Label text="INCIDENT TYPE"/>
+            <select value={form.incidentType} onChange={e=>update("incidentType",e.target.value)} style={{width:"100%",background:P2,border:`1px solid ${BORDER}`,borderRadius:7,padding:"8px 11px",color:TEXT,fontSize:13,fontFamily:FB}}>
+              <option value="water_contamination">Water Contamination</option>
+              <option value="air_pollution">Air Pollution</option>
+              <option value="land_destruction">Land Destruction</option>
+              <option value="health_impact">Health Impact</option>
+            </select>
+          </div>
+        </div>
+        <div style={{marginBottom:10}}>
+          <Label text="COMMUNITY NAME"/>
+          <input value={form.communityName} onChange={e=>update("communityName",e.target.value)} placeholder="e.g. Newtown community near Tarkwa" style={{width:"100%",background:P2,border:`1px solid ${BORDER}`,borderRadius:7,padding:"8px 11px",color:TEXT,fontSize:13,outline:"none",fontFamily:FB}}/>
+        </div>
+        <div style={{marginBottom:10}}>
+          <Label text="REPORTER NAME (optional)"/>
+          <input value={form.reporterName} onChange={e=>update("reporterName",e.target.value)} placeholder="Your name" style={{width:"100%",background:P2,border:`1px solid ${BORDER}`,borderRadius:7,padding:"8px 11px",color:TEXT,fontSize:13,outline:"none",fontFamily:FB}}/>
+        </div>
+        <div style={{marginBottom:14}}>
+          <Label text="DESCRIBE WHAT HAPPENED"/>
+          <textarea value={form.incidentDescription} onChange={e=>update("incidentDescription",e.target.value)} rows={3} placeholder="Describe the contamination..." style={{width:"100%",background:P2,border:`1px solid ${BORDER}`,borderRadius:7,padding:"8px 11px",color:TEXT,fontSize:13,outline:"none",fontFamily:FB,resize:"vertical"}}/>
+        </div>
+        <button onClick={()=>runLawyer(form)} disabled={lawyerLoading} style={{width:"100%",padding:"12px",borderRadius:8,border:"none",background:`linear-gradient(135deg,${RED},#BB2222)`,color:"white",fontSize:14,fontFamily:FB,fontWeight:600,cursor:"pointer",opacity:lawyerLoading?.7:1}}>
+          {lawyerLoading?"Generating Evidence...":"Generate Court-Ready Evidence Package"}
+        </button>
+      </Card>
+      {lawyerLoading&&<Spinner label="Compiling satellite evidence and human rights classifications..."/>}
+      {!lawyerLoading&&lawyerData&&!lawyerData._error&&(
+        <div>
+          <Card color={RED+"44"}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
+              <div>
+                <Label text="EVIDENCE PACKAGE"/>
+                <div style={{fontFamily:FH,fontSize:17,color:TEXT,fontWeight:"normal",marginBottom:4}}>{lawyerData.classification}</div>
+                <div style={{fontFamily:FM,fontSize:10,color:CYAN}}>Report ID: {lawyerData.report_id}</div>
+              </div>
+              <Tag label="COURT ADMISSIBLE" color={GREEN}/>
+            </div>
+            <InfoBox label="EXECUTIVE SUMMARY" value={lawyerData.executive_summary}/>
+          </Card>
+          <Card>
+            <Label text="CONTAMINATION EVIDENCE"/>
+            <MetricGrid items={[["MERCURY",`${lawyerData.contamination_evidence?.mercury_times_over_who_limit}x WHO`,RED],["ARSENIC",`${lawyerData.contamination_evidence?.arsenic_times_over_who_limit}x WHO`,AMBER],["TURBIDITY",`${lawyerData.contamination_evidence?.turbidity_times_over_safe}x safe`,AMBER]]}/>
+            <InfoBox label="PRIMARY SOURCE" value={lawyerData.contamination_evidence?.primary_source}/>
+          </Card>
+          <Card>
+            <Label text="HEALTH IMPACT"/>
+            <MetricGrid items={[["DISEASE OUTBREAK",lawyerData.health_impact?.disease_outbreak_probability_30days,RED],["CHILDREN AT RISK",lawyerData.health_impact?.children_at_neurological_risk?.toLocaleString(),RED],["CASES/MONTH",lawyerData.health_impact?.expected_cases_monthly?.toLocaleString(),AMBER]]}/>
+          </Card>
+          <Card>
+            <Label text="ECONOMIC DAMAGES"/>
+            <MetricGrid items={[["PROPERTY",`GHS ${lawyerData.economic_damages?.property_and_livelihood_damage_ghs?.toLocaleString()}`,RED],["AGRICULTURE",`GHS ${lawyerData.economic_damages?.agricultural_productivity_loss_ghs?.toLocaleString()}`,AMBER],["TOTAL",`GHS ${lawyerData.economic_damages?.total_quantified_damages_ghs?.toLocaleString()}`,RED]]}/>
+          </Card>
+          <Card color={PURPLE+"33"}>
+            <Label text="UN HUMAN RIGHTS VIOLATIONS" color={PURPLE}/>
+            <BulletList items={lawyerData.un_human_rights_violations} color={RED} icon="⚖"/>
+          </Card>
+          <Card>
+            <Label text="SATELLITE EVIDENCE TIMELINE"/>
+            {(lawyerData.satellite_evidence_timeline||[]).map((e,i)=>(
+              <div key={i} style={{display:"flex",gap:12,padding:"9px 12px",background:P2,borderRadius:7,marginBottom:6}}>
+                <div style={{fontFamily:FM,fontSize:9,color:CYAN,flexShrink:0,marginTop:2}}>{e.date}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:FB,fontSize:12,color:TEXT,marginBottom:2}}>{e.event}</div>
+                  <div style={{fontFamily:FM,fontSize:9,color:MUTED}}>{e.source} · {e.confidence}</div>
+                </div>
+              </div>
+            ))}
+          </Card>
+          <Card>
+            <Label text="RESPONSIBLE PARTIES"/>
+            {(lawyerData.responsible_parties||[]).map((p,i)=>(
+              <div key={i} style={{background:P2,borderRadius:8,padding:"12px 14px",marginBottom:10}}>
+                <div style={{fontFamily:FB,fontSize:13,fontWeight:600,color:RED,marginBottom:4}}>{p.party}</div>
+                <div style={{fontFamily:FB,fontSize:12,color:TEXT,marginBottom:4}}>{p.evidence}</div>
+                <div style={{fontFamily:FM,fontSize:10,color:AMBER}}>Legal: {p.legal_basis}</div>
+              </div>
+            ))}
+          </Card>
+          <Card color={GREEN+"33"}>
+            <Label text="LEGAL REMEDIES REQUESTED" color={GREEN}/>
+            <BulletList items={lawyerData.legal_remedies_requested} color={GREEN} icon="✓"/>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DamTab({damData,damLoading,runDam}){
+  const [form,setForm]=useState({region:"Western Region",damName:"",damAge:15,heightMeters:45,tailingsVolumeMCubic:12,lastInspectionDays:180,rainfallLast30Days:150});
+  const update=(k,v)=>setForm(f=>({...f,[k]:v}));
+  return(
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Dam Collapse Risk Predictor</div>
+      <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>ICOLD statistical failure model. Predicts collapse 90 days before failure.</p>
+      <Card>
+        <div style={{marginBottom:10}}>
+          <Label text="REGION"/>
+          <select value={form.region} onChange={e=>update("region",e.target.value)} style={{width:"100%",background:P2,border:`1px solid ${BORDER}`,borderRadius:7,padding:"8px 11px",color:TEXT,fontSize:13,fontFamily:FB}}>
+            {REGIONS.map(r=><option key={r.name} value={r.name}>{r.name}</option>)}
+          </select>
+        </div>
+        <div style={{marginBottom:10}}>
+          <Label text="DAM NAME"/>
+          <input value={form.damName} onChange={e=>update("damName",e.target.value)} placeholder="e.g. Bogoso Tailings Dam" style={{width:"100%",background:P2,border:`1px solid ${BORDER}`,borderRadius:7,padding:"8px 11px",color:TEXT,fontSize:13,outline:"none",fontFamily:FB}}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+          {[["Dam Age (years)","damAge"],["Height (metres)","heightMeters"],["Tailings Volume (Mm³)","tailingsVolumeMCubic"],["Inspection Gap (days)","lastInspectionDays"],["Rainfall (mm/30d)","rainfallLast30Days"]].map(([label,key])=>(
+            <div key={key}>
+              <Label text={label.toUpperCase()}/>
+              <input type="number" value={form[key]} onChange={e=>update(key,Number(e.target.value))} style={{width:"100%",background:P2,border:`1px solid ${BORDER}`,borderRadius:7,padding:"8px 11px",color:TEXT,fontSize:13,outline:"none",fontFamily:FB}}/>
+            </div>
+          ))}
+        </div>
+        <button onClick={()=>runDam(form)} disabled={damLoading} style={{width:"100%",padding:"12px",borderRadius:8,border:"none",background:`linear-gradient(135deg,${AMBER},#CC6600)`,color:"white",fontSize:14,fontFamily:FB,fontWeight:600,cursor:"pointer",opacity:damLoading?.7:1}}>
+          {damLoading?"Analysing...":"Run Collapse Risk Analysis"}
+        </button>
+      </Card>
+      {damLoading&&<Spinner label="Running ICOLD structural failure model..."/>}
+      {!damLoading&&damData&&!damData._error&&(
+        <div>
+          <Card color={(SEV_C[damData.risk_level]||BORDER)+"44"}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
+              <div>
+                <Label text={`FAILURE RISK — ${(damData.dam_name||"").toUpperCase()}`}/>
+                <div style={{fontFamily:FH,fontSize:52,color:SEV_C[damData.risk_level]||AMBER,lineHeight:1,fontWeight:"normal"}}>{damData.failure_probability_pct}%</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <Tag label={damData.risk_level} color={SEV_C[damData.risk_level]} bg={SEV_BG[damData.risk_level]}/>
+                <div style={{fontFamily:FM,fontSize:11,color:RED,marginTop:10,fontWeight:600}}>{damData.days_to_critical_condition} days to critical</div>
+              </div>
+            </div>
+          </Card>
+          <Card>
+            <Label text="STRUCTURAL FACTORS"/>
+            {damData.structural_factors&&Object.entries(damData.structural_factors).map(([k,v])=>(
+              <div key={k} style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontFamily:FB,fontSize:12,color:TEXT}}>{k.replace(/_/g," ")}</span>
+                  <span style={{fontFamily:FB,fontSize:14,fontWeight:700,color:v>70?RED:v>40?AMBER:GREEN}}>{v}</span>
+                </div>
+                <div style={{height:5,background:"rgba(255,255,255,.04)",borderRadius:3,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${v}%`,background:v>70?RED:v>40?AMBER:GREEN}}/>
+                </div>
+              </div>
+            ))}
+          </Card>
+          <Card color={RED+"33"}>
+            <Label text="DOWNSTREAM IMPACT" color={RED}/>
+            <MetricGrid items={[["POPULATION AT RISK",damData.downstream_impact?.population_at_risk?.toLocaleString(),RED],["FLOOD SPEED",`${damData.downstream_impact?.flood_wave_speed_kmh} km/h`,AMBER],["WARNING TIME",`${damData.downstream_impact?.warning_time_minutes} min`,RED]]}/>
+            <InfoBox label="COMPARABLE DISASTER" value={damData.downstream_impact?.comparable_disaster} color={RED}/>
+          </Card>
+          <Card>
+            <Label text="WARNING SIGNALS"/>
+            {(damData.warning_signals||[]).map((w,i)=>(
+              <div key={i} style={{display:"flex",gap:8,padding:"8px 12px",background:P2,borderRadius:7,marginBottom:6}}>
+                <Tag label={w.severity} color={SEV_C[w.severity]||AMBER}/>
+                <span style={{fontFamily:FB,fontSize:12,color:TEXT,lineHeight:1.6}}>{w.signal}</span>
+              </div>
+            ))}
+          </Card>
+          <Card>
+            <Label text="SATELLITE MONITORING"/>
+            {(damData.satellite_indicators||[]).map((s,i)=>(
+              <div key={i} style={{background:P2,borderRadius:7,padding:"10px 12px",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontFamily:FB,fontSize:13,color:TEXT}}>{s.indicator}</span>
+                  <Tag label={s.status} color={s.status.includes("DETECTED")||s.status.includes("CONTAMINATED")?RED:s.status==="ELEVATED"?AMBER:GREEN}/>
+                </div>
+                <div style={{fontFamily:FM,fontSize:10,color:MUTED,marginBottom:2}}>{s.method}</div>
+                <div style={{fontFamily:FB,fontSize:11,color:CYAN}}>{s.value}</div>
+              </div>
+            ))}
+          </Card>
+          <Card color={damData.risk_level==="CRITICAL"?RED+"33":GREEN+"22"}>
+            <Label text="IMMEDIATE ACTIONS" color={damData.risk_level==="CRITICAL"?RED:GREEN}/>
+            <BulletList items={damData.immediate_actions} color={damData.risk_level==="CRITICAL"?RED:GREEN} icon={damData.risk_level==="CRITICAL"?"!":"✓"}/>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InsuranceTab({insuranceData,insuranceLoading,runInsurance}){
+  const [form,setForm]=useState({region:"Western Region",cropType:"cocoa",farmSizeHectares:2});
+  const update=(k,v)=>setForm(f=>({...f,[k]:v}));
+  return(
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Parametric Crop Insurance Engine</div>
+      <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Satellite-triggered insurance for Ghanaian farmers. No paperwork. Payout via mobile money within 48 hours.</p>
+      <Card>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+          <div>
+            <Label text="REGION"/>
+            <select value={form.region} onChange={e=>update("region",e.target.value)} style={{width:"100%",background:P2,border:`1px solid ${BORDER}`,borderRadius:7,padding:"8px 11px",color:TEXT,fontSize:13,fontFamily:FB}}>
+              {REGIONS.map(r=><option key={r.name} value={r.name}>{r.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <Label text="CROP TYPE"/>
+            <select value={form.cropType} onChange={e=>update("cropType",e.target.value)} style={{width:"100%",background:P2,border:`1px solid ${BORDER}`,borderRadius:7,padding:"8px 11px",color:TEXT,fontSize:13,fontFamily:FB}}>
+              {["cocoa","maize","cassava","yam","rice"].map(c=><option key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</option>)}
+            </select>
+          </div>
+          <div>
+            <Label text="FARM SIZE (HA)"/>
+            <input type="number" min={0.5} step={0.5} value={form.farmSizeHectares} onChange={e=>update("farmSizeHectares",Number(e.target.value))} style={{width:"100%",background:P2,border:`1px solid ${BORDER}`,borderRadius:7,padding:"8px 11px",color:TEXT,fontSize:13,outline:"none",fontFamily:FB}}/>
+          </div>
+        </div>
+        <button onClick={()=>runInsurance(form)} disabled={insuranceLoading} style={{width:"100%",padding:"12px",borderRadius:8,border:"none",background:`linear-gradient(135deg,${GREEN},#009944)`,color:"white",fontSize:14,fontFamily:FB,fontWeight:600,cursor:"pointer",opacity:insuranceLoading?.7:1}}>
+          {insuranceLoading?"Calculating...":"Calculate Insurance & Yield"}
+        </button>
+      </Card>
+      {insuranceLoading&&<Spinner label="Running satellite yield model..."/>}
+      {!insuranceLoading&&insuranceData&&!insuranceData._error&&(
+        <div>
+          <Card color={GREEN+"33"}>
+            <Label text={`POLICY — ${insuranceData.crop_type?.toUpperCase()} — ${insuranceData.farm_size_ha} HA`}/>
+            <div style={{fontFamily:FM,fontSize:10,color:CYAN,marginBottom:12}}>Policy ID: {insuranceData.policy_id}</div>
+            <MetricGrid items={[["YIELD LOSS",`${insuranceData.yield_assessment?.yield_loss_pct}%`,RED],["EXPECTED YIELD",`${insuranceData.yield_assessment?.expected_yield_this_season_kg?.toLocaleString()} kg`,GREEN],["NORMAL YIELD",`${insuranceData.yield_assessment?.normal_yield_kg_ha} kg/ha`,CYAN]]}/>
+          </Card>
+          <Card>
+            <Label text="FINANCIAL ASSESSMENT"/>
+            <MetricGrid items={[["NORMAL REVENUE",`GHS ${insuranceData.financial_assessment?.normal_revenue_ghs?.toLocaleString()}`,CYAN],["REVENUE LOSS",`GHS ${insuranceData.financial_assessment?.revenue_loss_ghs?.toLocaleString()}`,RED],["INSURANCE PAYOUT",`GHS ${insuranceData.financial_assessment?.insurance_payout_ghs?.toLocaleString()}`,GREEN]]}/>
+            <div style={{background:`${insuranceData.payout_conditions?.payout_will_occur?GREEN:AMBER}0a`,border:`1px solid ${insuranceData.payout_conditions?.payout_will_occur?GREEN:AMBER}22`,borderRadius:8,padding:"11px 13px"}}>
+              <Label text="PAYOUT STATUS" color={insuranceData.payout_conditions?.payout_will_occur?GREEN:AMBER}/>
+              <div style={{fontFamily:FB,fontSize:13,color:TEXT}}>{insuranceData.payout_conditions?.payout_will_occur?"✓ PAYOUT WILL OCCUR — "+insuranceData.payout_conditions?.payout_timeline:"No payout — yield loss below threshold"}</div>
+            </div>
+          </Card>
+          <Card>
+            <Label text="SATELLITE TRIGGERS"/>
+            {(insuranceData.satellite_triggers||[]).map((t,i)=>(
+              <div key={i} style={{background:P2,borderRadius:8,padding:"11px 13px",marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <span style={{fontFamily:FB,fontSize:13,fontWeight:600,color:TEXT}}>{t.trigger}</span>
+                  <Tag label={t.current_status} color={t.current_status==="TRIGGERED"?RED:t.current_status==="NOT TRIGGERED"?GREEN:AMBER}/>
+                </div>
+                <div style={{fontFamily:FM,fontSize:10,color:MUTED,marginBottom:3}}>{t.satellite}</div>
+                <div style={{fontFamily:FB,fontSize:12,color:CYAN}}>{t.current_value}</div>
+              </div>
+            ))}
+          </Card>
+          <Card color={GREEN+"22"}>
+            <Label text="AGRONOMIC ADVICE" color={GREEN}/>
+            <InfoBox label="SOIL SAFETY" value={insuranceData.agronomic_advice?.soil_safety}/>
+            <InfoBox label="IRRIGATION" value={insuranceData.agronomic_advice?.irrigation_safety}/>
+            <InfoBox label="PLANTING CALENDAR" value={insuranceData.agronomic_advice?.planting_calendar}/>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AirTab({airData,airLoading,runAir}){
+  const [region,setRegion]=useState("Western Region");
+  const aqiColor=aqi=>aqi>150?RED:aqi>100?AMBER:aqi>50?"#F5C842":GREEN;
+  return(
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Real-Time Air Quality Alert System</div>
+      <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Mercury vapour, PM2.5, SO2 calculated from environmental data. SMS alerts in English and Twi.</p>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+        {REGIONS.map(r=>(<button key={r.name} onClick={()=>setRegion(r.name)} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${region===r.name?CYAN:BORDER2}`,background:region===r.name?`${CYAN}10`:"transparent",color:region===r.name?CYAN:MUTED,cursor:"pointer",fontSize:12,fontFamily:FB}}>{r.name}</button>))}
+      </div>
+      <button onClick={()=>runAir(region)} disabled={airLoading} style={{width:"100%",padding:"12px",borderRadius:8,border:"none",background:`linear-gradient(135deg,${CYAN},#0099BB)`,color:BG,fontSize:14,fontFamily:FB,fontWeight:600,cursor:"pointer",marginBottom:20,opacity:airLoading?.7:1}}>
+        {airLoading?"Calculating...":"Run Air Quality Analysis"}
+      </button>
+      {airLoading&&<Spinner label="Calculating pollutants and generating alerts..."/>}
+      {!airLoading&&airData&&!airData._error&&(
+        <div>
+          <Card color={aqiColor(airData.aqi)+"44"}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
+              <div>
+                <Label text={`AQI — ${(airData.region||"").toUpperCase()}`}/>
+                <div style={{fontFamily:FH,fontSize:52,color:aqiColor(airData.aqi),lineHeight:1,fontWeight:"normal"}}>{airData.aqi}</div>
+                <div style={{fontFamily:FB,fontSize:14,color:aqiColor(airData.aqi),marginTop:4,fontWeight:600}}>{airData.aqi_category}</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <Tag label={airData.alert_level?.split("—")[0].trim()} color={aqiColor(airData.aqi)}/>
+                <div style={{fontFamily:FM,fontSize:10,color:MUTED,marginTop:8}}>Affected: {airData.affected_population?.toLocaleString()}</div>
+              </div>
+            </div>
+            <MetricGrid items={[["MERCURY VAPOUR",`${airData.pollutants?.mercury_vapour_ng_m3} ng/m³`,RED,`${airData.pollutants?.mercury_times_over_who_limit}x WHO`],["PM2.5",`${airData.pollutants?.pm25_ugm3} μg/m³`,AMBER,`${airData.pollutants?.pm25_times_over_who_limit}x WHO`],["SO2",`${airData.pollutants?.so2_ugm3} μg/m³`,AMBER,"Industrial"]]}/>
+          </Card>
+          {(airData.health_impacts||[]).map((h,i)=>(
+            <Card key={i} color={RED+"33"}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+                <div style={{fontFamily:FH,fontSize:15,color:TEXT}}>{h.pollutant}</div>
+                <Tag label={`${h.times_over}x WHO`} color={RED}/>
+              </div>
+              <InfoBox label="HEALTH EFFECT" value={h.health_effect} color={RED}/>
+              <InfoBox label="MOST VULNERABLE" value={h.most_vulnerable} color={AMBER}/>
+              <InfoBox label="ACTION" value={h.recommendation} color={GREEN}/>
+            </Card>
+          ))}
+          <Card color={CYAN+"22"}>
+            <Label text="SMS ALERT — ENGLISH"/>
+            <div style={{fontFamily:FM,fontSize:11,color:TEXT,background:P2,borderRadius:7,padding:"12px 14px",lineHeight:1.8,whiteSpace:"pre-line"}}>{airData.sms_alerts?.english}</div>
+          </Card>
+          <Card color={CYAN+"22"}>
+            <Label text="SMS ALERT — TWI"/>
+            <div style={{fontFamily:FM,fontSize:11,color:TEXT,background:P2,borderRadius:7,padding:"12px 14px",lineHeight:1.8,whiteSpace:"pre-line"}}>{airData.sms_alerts?.twi}</div>
+          </Card>
+          <Card>
+            <Label text="24-HOUR FORECAST"/>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+              {(airData.forecast_24h||[]).map((f,i)=>(
+                <div key={i} style={{background:P2,borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+                  <div style={{fontFamily:FM,fontSize:9,color:MUTED,marginBottom:4}}>{f.time}</div>
+                  <div style={{fontFamily:FB,fontSize:18,fontWeight:700,color:aqiColor(f.predicted_aqi)}}>{f.predicted_aqi}</div>
+                  <div style={{fontFamily:FM,fontSize:9,color:aqiColor(f.predicted_aqi),marginTop:2}}>{f.category}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CriminalTab({criminalData,criminalLoading,runCriminal}){
+  const [region,setRegion]=useState("Western Region");
+  return(
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
+      <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Criminal Network Intelligence</div>
+      <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Quantum graph analysis maps illegal mining criminal networks. From site operators to financiers to international gold traders.</p>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+        {REGIONS.map(r=>(<button key={r.name} onClick={()=>setRegion(r.name)} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${region===r.name?CYAN:BORDER2}`,background:region===r.name?`${CYAN}10`:"transparent",color:region===r.name?CYAN:MUTED,cursor:"pointer",fontSize:12,fontFamily:FB}}>{r.name}</button>))}
+      </div>
+      <button onClick={()=>runCriminal(region)} disabled={criminalLoading} style={{width:"100%",padding:"12px",borderRadius:8,border:"none",background:`linear-gradient(135deg,${PURPLE},#6600BB)`,color:"white",fontSize:14,fontFamily:FB,fontWeight:600,cursor:"pointer",marginBottom:20,opacity:criminalLoading?.7:1}}>
+        {criminalLoading?"Mapping network...":"Run Criminal Network Analysis"}
+      </button>
+      {criminalLoading&&<Spinner label="Running quantum graph analysis..."/>}
+      {!criminalLoading&&criminalData&&!criminalData._error&&(
+        <div>
+          <Card color={PURPLE+"44"}>
+            <Label text={`CRIMINAL NETWORK — ${(criminalData.region||"").toUpperCase()}`}/>
+            <MetricGrid items={[["OPERATORS",criminalData.network_summary?.total_operators_estimated,RED],["GOLD/MONTH",`${criminalData.network_summary?.gold_extracted_kg_per_month} kg`,AMBER],["REVENUE",`GHS ${criminalData.network_summary?.criminal_revenue_ghs_per_month?.toLocaleString()}/mo`,RED]]}/>
+            <InfoBox label="QUANTUM ADVANTAGE" value={criminalData.quantum_advantage} color={CYAN}/>
+          </Card>
+          <Card>
+            <Label text="NETWORK HIERARCHY"/>
+            {(criminalData.network_layers||[]).map((layer,i)=>(
+              <div key={i} style={{background:P2,borderRadius:8,padding:"12px 14px",marginBottom:10,borderLeft:`3px solid ${[RED,AMBER,CYAN,PURPLE][i]||CYAN}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <div style={{fontFamily:FB,fontSize:13,fontWeight:600,color:[RED,AMBER,CYAN,PURPLE][i]||CYAN}}>Level {layer.level} — {layer.role}</div>
+                  <Tag label={`${layer.estimated_count} identified`} color={[RED,AMBER,CYAN,PURPLE][i]||CYAN}/>
+                </div>
+                <div style={{fontFamily:FB,fontSize:12,color:MUTED,marginBottom:4}}>{layer.location}</div>
+                <div style={{fontFamily:FM,fontSize:10,color:AMBER}}>Legal: {layer.legal_exposure}</div>
+              </div>
+            ))}
+          </Card>
+          <Card>
+            <Label text="GOLD SUPPLY CHAIN"/>
+            {(criminalData.supply_chain||[]).map((step,i)=>(
+              <div key={i} style={{display:"flex",gap:12,padding:"9px 12px",background:P2,borderRadius:7,marginBottom:6}}>
+                <div style={{width:24,height:24,borderRadius:"50%",flexShrink:0,background:`${CYAN}20`,border:`1px solid ${CYAN}44`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:FM,fontSize:11,color:CYAN,fontWeight:700}}>{i+1}</div>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontFamily:FB,fontSize:13,color:TEXT,fontWeight:600}}>{step.stage}</span>
+                    <Tag label={step.confidence} color={parseFloat(step.confidence)>80?GREEN:parseFloat(step.confidence)>60?AMBER:MUTED}/>
+                  </div>
+                  <div style={{fontFamily:FB,fontSize:12,color:MUTED}}>{step.location}</div>
+                </div>
+              </div>
+            ))}
+          </Card>
+          <Card color={RED+"33"}>
+            <Label text="INTERPOL TRIGGERS" color={RED}/>
+            <BulletList items={criminalData.interpol_triggers} color={RED} icon="!"/>
+          </Card>
+          <Card>
+            <Label text="ENFORCEMENT PRIORITIES"/>
+            {(criminalData.enforcement_priorities||[]).map((p,i)=>(
+              <div key={i} style={{background:P2,borderRadius:8,padding:"11px 13px",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <span style={{fontFamily:FB,fontSize:13,color:TEXT}}>#{p.priority} — {p.action}</span>
+                  <Tag label={p.evidence_strength} color={p.evidence_strength==="VERY STRONG"?GREEN:p.evidence_strength==="STRONG"?CYAN:AMBER}/>
+                </div>
+                <div style={{fontFamily:FM,fontSize:10,color:MUTED}}>{p.recommended_agency}</div>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── TIMELINE TAB ──
+function TimelineTab({timelineData,timelineLoading,runTimeline,activeRegion}){
+  const API="https://qgif-backend.onrender.com";
+  const [selectedRegion,setSelectedRegion]=useState(activeRegion||"Western Region");
+  const ss={fontFamily:"Inter,'Segoe UI',system-ui,sans-serif"};
+  const sm={fontFamily:"'DM Mono','Fira Mono',monospace"};
+
+  const handleRun=()=>{
+    const rd=REGION_COORDS[selectedRegion];
+    if(rd) runTimeline(rd.lat,rd.lng,selectedRegion);
+  };
+
+  const maxMining=timelineData?.results?.filter(r=>r.status==="OK").reduce((m,r)=>Math.max(m,r.mining_score),1)||100;
+  const maxGap=timelineData?.results?.filter(r=>r.status==="OK").reduce((m,r)=>Math.max(m,r.degradation_gap),.1)||1;
+
+  return(
+    <div className="tab-content" style={{background:BG}}>
+      <div className="tab-inner" style={{margin:"0 auto"}}>
+
+        <div style={{marginBottom:20}}>
+          <div style={{...ss,fontSize:18,fontWeight:600,color:TEXT,marginBottom:4,letterSpacing:"-.02em"}}>Historical Satellite Timeline</div>
+          <div style={{...sm,fontSize:9,color:MUTED,letterSpacing:".1em",textTransform:"uppercase"}}>Year-by-year environmental change · 2020 to present · Sentinel-2</div>
+        </div>
+
+        {/* Controls */}
+        <div className="card" style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:20}}>
+          <select value={selectedRegion} onChange={e=>setSelectedRegion(e.target.value)} className="select" style={{flex:1,minWidth:180}}>
+            {Object.keys(REGION_COORDS).map(r=><option key={r} value={r}>{r}</option>)}
+          </select>
+          <button className="btn-primary btn" onClick={handleRun} disabled={timelineLoading} style={{flexShrink:0}}>
+            {timelineLoading?"Analysing years...":"Run Historical Analysis"}
+          </button>
+          {timelineData&&<div style={{...sm,fontSize:10,color:MUTED,flexShrink:0}}>Last: {timelineData.location}</div>}
+        </div>
+
+        {timelineLoading&&(
+          <div style={{textAlign:"center",padding:"60px 20px"}}>
+            <Spinner label="Querying satellite archive for 6 years of data — this takes 2-3 minutes"/>
+          </div>
+        )}
+
+        {!timelineLoading&&timelineData&&!timelineData._error&&(
+          <div style={{animation:"fadein .3s ease"}}>
+
+            {/* Trend summary */}
+            {timelineData.trend&&(
+              <div className={"card "+(timelineData.trend.direction==="DEGRADING"?"card-critical":"card-low")} style={{marginBottom:20}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10,marginBottom:12}}>
+                  <div>
+                    <div style={{...sm,fontSize:9,color:MUTED,marginBottom:4}}>TREND SUMMARY · {timelineData.trend.years_covered}</div>
+                    <div style={{...ss,fontSize:16,fontWeight:600,color:timelineData.trend.direction==="DEGRADING"?RED:GREEN}}>
+                      {timelineData.trend.direction}
+                    </div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,auto)",gap:"8px 20px",textAlign:"center"}}>
+                    {[
+                      ["NDVI Change",timelineData.trend.ndvi_change,timelineData.trend.ndvi_change<0?RED:GREEN],
+                      ["Forest Change",`${timelineData.trend.forest_cover_change}%`,timelineData.trend.forest_cover_change<0?RED:GREEN],
+                      ["Mining Shift",`+${timelineData.trend.mining_score_change}`,timelineData.trend.mining_score_change>10?RED:GREEN],
+                      ["Degradation",`+${timelineData.trend.degradation_change}`,timelineData.trend.degradation_change>0.1?RED:GREEN],
+                    ].map(([l,v,c])=>(
+                      <div key={l}>
+                        <div style={{...sm,fontSize:8,color:MUTED}}>{l}</div>
+                        <div style={{...sm,fontSize:14,fontWeight:500,color:c}}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{...ss,fontSize:13,color:TEXT2,lineHeight:1.6}}>{timelineData.trend.assessment}</div>
+              </div>
+            )}
+
+            {/* Year-by-year chart */}
+            <div className="card" style={{marginBottom:16}}>
+              <div className="section-label">Mining Activity Score by Year</div>
+              <div style={{display:"flex",alignItems:"flex-end",gap:8,height:120,padding:"8px 0"}}>
+                {timelineData.results.map(r=>{
+                  const h=r.status==="OK"?Math.max(4,Math.round((r.mining_score/maxMining)*100)):4;
+                  const col=r.mining_score>70?RED:r.mining_score>40?AMBER:GREEN;
+                  return(
+                    <div key={r.year} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                      <div style={{...sm,fontSize:9,color:col}}>{r.status==="OK"?r.mining_score:"—"}</div>
+                      <div style={{width:"100%",height:`${h}px`,background:r.status==="OK"?col:"rgba(255,255,255,.05)",borderRadius:"3px 3px 0 0",minHeight:4,transition:"height .5s ease"}}/>
+                      <div style={{...sm,fontSize:9,color:MUTED}}>{r.year}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* NDVI chart */}
+            <div className="card" style={{marginBottom:16}}>
+              <div className="section-label">Vegetation Health (NDVI) by Year</div>
+              <div style={{display:"flex",alignItems:"flex-end",gap:8,height:100,padding:"8px 0"}}>
+                {timelineData.results.map(r=>{
+                  const h=r.status==="OK"?Math.max(4,Math.round((r.ndvi_mean/0.8)*100)):4;
+                  const col=r.ndvi_mean>0.5?GREEN:r.ndvi_mean>0.3?AMBER:RED;
+                  return(
+                    <div key={r.year} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                      <div style={{...sm,fontSize:9,color:col}}>{r.status==="OK"?r.ndvi_mean:"—"}</div>
+                      <div style={{width:"100%",height:`${h}px`,background:r.status==="OK"?col:"rgba(255,255,255,.05)",borderRadius:"3px 3px 0 0",minHeight:4}}/>
+                      <div style={{...sm,fontSize:9,color:MUTED}}>{r.year}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Detail table */}
+            <div className="card">
+              <div className="section-label">Year-by-Year Data</div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{borderBottom:`1px solid ${BORDER}`}}>
+                    {["Year","Sat. Date","NDVI","Degradation Gap","Forest Cover","Mining Score","Signal"].map(h=>(
+                      <th key={h} style={{...sm,fontSize:9,color:MUTED,padding:"6px 8px",textAlign:"left",letterSpacing:".06em",textTransform:"uppercase"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {timelineData.results.map(r=>(
+                    <tr key={r.year} style={{borderBottom:`1px solid ${BORDER2}`}}>
+                      <td style={{...sm,fontSize:12,color:TEXT,padding:"8px",fontWeight:500}}>{r.year}</td>
+                      <td style={{...sm,fontSize:11,color:MUTED,padding:"8px"}}>{r.satellite_date||"—"}</td>
+                      <td style={{...sm,fontSize:12,color:r.status==="OK"?(r.ndvi_mean>0.5?GREEN:r.ndvi_mean>0.3?AMBER:RED):MUTED,padding:"8px"}}>{r.status==="OK"?r.ndvi_mean:"N/A"}</td>
+                      <td style={{...sm,fontSize:12,color:r.status==="OK"?(r.degradation_gap>0.3?RED:r.degradation_gap>0.15?AMBER:GREEN):MUTED,padding:"8px"}}>{r.status==="OK"?r.degradation_gap:"N/A"}</td>
+                      <td style={{...ss,fontSize:12,color:TEXT2,padding:"8px"}}>{r.status==="OK"?`${r.forest_cover_pct}%`:"N/A"}</td>
+                      <td style={{...sm,fontSize:12,color:r.status==="OK"?(r.mining_score>70?RED:r.mining_score>40?AMBER:GREEN):MUTED,padding:"8px",fontWeight:500}}>{r.status==="OK"?`${r.mining_score}/100`:"N/A"}</td>
+                      <td style={{padding:"8px"}}>{r.status==="OK"?<Tag label={r.degradation_gap>0.25?"ALERT":"CLEAR"} color={r.degradation_gap>0.25?RED:GREEN}/>:<span style={{...sm,fontSize:9,color:MUTED}}>NO DATA</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{...sm,fontSize:9,color:MUTED,marginTop:12,lineHeight:1.7,paddingTop:10,borderTop:`1px solid ${BORDER}`}}>
+                Data source: ESA Sentinel-2 MSI (Surface Reflectance) via Google Earth Engine · 5km radius · Water bodies excluded · Best cloud-free image per year
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {!timelineLoading&&!timelineData&&(
+          <div style={{textAlign:"center",padding:"80px 20px"}}>
+            <div style={{width:48,height:48,borderRadius:8,background:`${CYAN}12`,border:`1px solid ${CYAN}22`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontSize:20}}></div>
+            <div style={{...ss,fontSize:15,fontWeight:600,color:TEXT,marginBottom:6}}>Historical Analysis</div>
+            <div style={{...ss,fontSize:13,color:MUTED,lineHeight:1.6,maxWidth:400,margin:"0 auto"}}>
+              Select a region and run the analysis to see how vegetation, forest cover, and mining activity have changed year by year from 2020 to present.
+            </div>
+          </div>
+        )}
+
+        <div style={{height:40}}/>
+      </div>
+    </div>
+  );
+}
+
+
+function MonitoringTab({monitorData,monitorLoading,runMonitor,dashData,dashLoading,loadDash}){
+  const [email,setEmail]=useState("");
+  const [orgName,setOrgName]=useState("");
+  const [regStatus,setRegStatus]=useState(null);
+  const [regLoading,setRegLoading]=useState(false);
+  const [testEmailStatus,setTestEmailStatus]=useState(null);
+  const [testEmailLoading,setTestEmailLoading]=useState(false);
+  const API="https://qgif-backend.onrender.com";
+
+  const sendTestEmail=async()=>{
+    if(!email){alert("Enter your email first");return;}
+    setTestEmailLoading(true);setTestEmailStatus(null);
+    try{const r=await fetch(API+"/monitoring/test-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,secret:"qgif-monitor-2026"})});const d=await r.json();setTestEmailStatus(d);}
+    catch(e){setTestEmailStatus({status:"ERROR",message:e.message});}
+    finally{setTestEmailLoading(false);}
+  };
+  const registerAlert=async()=>{
+    if(!email)return;
+    setRegLoading(true);setRegStatus(null);
+    try{const r=await fetch(API+"/monitoring/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,organisation:orgName,regions:["all"],severity_threshold:"WARNING",name:orgName})});const d=await r.json();setRegStatus(d);}
+    catch(e){setRegStatus({error:e.message});}
+    finally{setRegLoading(false);}
+  };
+  const SEV_COL={CRITICAL:RED,WARNING:AMBER,WATCH:"#F5C842",IMPROVEMENT:GREEN,INFO:CYAN};
+  const SC={CRITICAL:"alert-critical",WARNING:"alert-warning",WATCH:"alert-watch",IMPROVEMENT:"alert-improvement"};
+  const ss={fontFamily:FB};
+  const sm={fontFamily:FM};
+
+  return(
+    <div className="tab-content" style={{background:BG}}>
+      <div className="tab-inner" style={{margin:"0 auto"}}>
+
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:10}}>
+          <div>
+            <div style={{...ss,fontSize:20,color:TEXT,fontWeight:600,marginBottom:4}}>Environmental Monitoring System</div>
+            <div style={{...sm,fontSize:10,color:MUTED,letterSpacing:".06em",textTransform:"uppercase"}}>Automated 30-day satellite surveillance for all 12 Ghana regions</div>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button className="qgif-btn-secondary" onClick={loadDash}>Refresh</button>
+            <button className="qgif-btn-primary" onClick={runMonitor} disabled={monitorLoading}>{monitorLoading?"Running...":"Run Check Now"}</button>
+          </div>
+        </div>
+
+        <div className="qgif-card" style={{marginBottom:16}}>
+          <div className="section-label">How It Works</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+            {[["Every 30 Days","Queries Earth Engine for all 12 regions automatically"],["Compares Readings","Flags regions where degradation gap increases by more than 0.05"],["Generates Alerts","Critical (0.10+), Warning (0.05+), Watch (0.02+), Improvement"],["Sends Email","Registered users receive formatted satellite alert reports"]].map(([t,d])=>(
+              <div key={t} style={{background:BG,borderRadius:7,padding:"10px 12px"}}>
+                <div style={{...ss,fontSize:12,fontWeight:600,color:CYAN,marginBottom:4}}>{t}</div>
+                <div style={{...ss,fontSize:11,color:MUTED,lineHeight:1.5}}>{d}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {dashLoading&&<Spinner label="Loading dashboard..."/>}
+        {!dashLoading&&dashData&&(
+          <div>
+            <div className="section-label">System Status</div>
+            <div className="stat-grid" style={{marginBottom:16}}>
+              {[["Status",dashData.system_status?.includes("ACTIVE")?"Active":"Offline",dashData.system_status?.includes("ACTIVE")?GREEN:RED],["Last Check",dashData.last_full_check||"Never",CYAN],["Total Runs",dashData.total_monitoring_runs||0,PURPLE],["Alerts",dashData.total_alerts_ever||0,AMBER],["Critical",dashData.active_critical_alerts||0,RED],["Warnings",dashData.active_warning_alerts||0,AMBER]].map(([l,v,c])=>(
+                <div key={l} className="stat-box">
+                  <div className="stat-label">{l}</div>
+                  <div className="stat-value" style={{color:c,fontSize:typeof v==="string"&&v.length>6?12:18}}>{v}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="section-label">Region Status</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(175px,1fr))",gap:6,marginBottom:16}}>
+              {(dashData.regions||[]).map(r=>(
+                <div key={r.region} className="qgif-card" style={{padding:"10px 12px",borderColor:r.latest_threat_level==="CRITICAL"?"rgba(204,34,34,.4)":r.latest_threat_level==="HIGH"?"rgba(204,102,0,.3)":undefined}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <div style={{...ss,fontSize:11,fontWeight:600,color:TEXT}}>{(r.region||"").replace(" Region","")}</div>
+                    {r.latest_threat_level&&<Tag label={r.latest_threat_level} color={SEV_C[r.latest_threat_level]||MUTED}/>}
+                  </div>
+                  {r.latest_gap!=null?(<div style={{display:"flex",gap:12}}>
+                    <div><div style={{...sm,fontSize:8,color:MUTED}}>GAP</div><div style={{...ss,fontSize:14,fontWeight:700,color:r.latest_gap>0.3?RED:r.latest_gap>0.15?AMBER:GREEN}}>{r.latest_gap}</div></div>
+                    <div><div style={{...sm,fontSize:8,color:MUTED}}>MINING</div><div style={{...ss,fontSize:14,fontWeight:700,color:r.latest_mining_score>60?RED:r.latest_mining_score>30?AMBER:GREEN}}>{r.latest_mining_score}</div></div>
+                    <div><div style={{...sm,fontSize:8,color:MUTED}}>DATE</div><div style={{...ss,fontSize:10,color:MUTED}}>{r.last_checked||"—"}</div></div>
+                  </div>):<div style={{...ss,fontSize:11,color:MUTED}}>No data yet</div>}
+                </div>
+              ))}
+            </div>
+
+            {((dashData.recent_critical_alerts||[]).length+(dashData.recent_warnings||[]).length)>0&&(
+              <div style={{marginBottom:16}}>
+                <div className="section-label">Recent Alerts</div>
+                {[...(dashData.recent_critical_alerts||[]),...(dashData.recent_warnings||[])].map((alert,i)=>(
+                  <div key={i} className={"qgif-card "+(SC[alert.severity]||"")} style={{padding:"10px 14px",marginBottom:6}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                      <Tag label={alert.severity} color={SEV_COL[alert.severity]||CYAN}/>
+                      <span style={{...sm,fontSize:9,color:MUTED}}>{alert.date}</span>
+                    </div>
+                    <div style={{...ss,fontSize:12,color:TEXT,lineHeight:1.6,marginBottom:4}}>{alert.message}</div>
+                    <div style={{...ss,fontSize:11,color:CYAN,fontWeight:600}}>Action: {alert.recommended_action}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {monitorLoading&&<Spinner label="Running satellite checks for all 12 regions — please wait 3 to 5 minutes"/>}
+        {!monitorLoading&&monitorData&&!monitorData._error&&(
+          <div className="qgif-card" style={{marginBottom:16,borderColor:"rgba(0,135,90,.3)"}}>
+            <div className="section-label" style={{color:GREEN}}>Check Complete — {monitorData.checked_at?.split('T')[0]}</div>
+            <div className="stat-grid">
+              {[["Checked",monitorData.regions_checked,CYAN],["OK",monitorData.regions_ok,GREEN],["Alerts",monitorData.new_alerts,monitorData.new_alerts>0?AMBER:GREEN],["Critical",monitorData.critical_alerts,monitorData.critical_alerts>0?RED:GREEN]].map(([l,v,c])=>(
+                <div key={l} className="stat-box"><div className="stat-label">{l}</div><div className="stat-value" style={{color:c}}>{v}</div></div>
+              ))}
+            </div>
+            {monitorData.alerts?.length>0?(<div style={{marginTop:12}}>
+              <div className="section-label">New Alerts</div>
+              {monitorData.alerts.map((alert,i)=>(
+                <div key={i} className={"qgif-card "+(SC[alert.severity]||"")} style={{padding:"10px 12px",marginBottom:6}}>
+                  <Tag label={alert.severity} color={SEV_COL[alert.severity]||CYAN}/>
+                  <div style={{...ss,fontSize:12,color:TEXT,marginTop:6,lineHeight:1.6}}>{alert.message}</div>
+                  <div style={{...ss,fontSize:11,color:CYAN,marginTop:4,fontWeight:600}}>Action: {alert.recommended_action}</div>
+                </div>
+              ))}
+            </div>):<div style={{...ss,fontSize:12,color:GREEN,marginTop:8}}>No significant changes detected since the last check.</div>}
+          </div>
+        )}
+
+        <div className="qgif-card" style={{borderColor:"rgba(91,33,182,.3)"}}>
+          <div className="section-label">Register for Monitoring Alerts</div>
+          <div style={{...ss,fontSize:12,color:TEXT2,marginBottom:12,lineHeight:1.7}}>Receive automatic email alerts when QGIF detects new environmental disturbances. Alerts are sent within hours of each monthly satellite check.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
+            <input className="qgif-input" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email address"/>
+            <input className="qgif-input" value={orgName} onChange={e=>setOrgName(e.target.value)} placeholder="Organisation name (optional)"/>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button className="qgif-btn-primary" onClick={registerAlert} disabled={regLoading||!email} style={{flex:1}}>{regLoading?"Registering...":"Register for Alerts"}</button>
+              <button className="qgif-btn-secondary" onClick={sendTestEmail} disabled={testEmailLoading||!email} style={{flex:1}}>{testEmailLoading?"Sending...":"Send Test Email"}</button>
+            </div>
+          </div>
+          {regStatus&&!regStatus.error&&<div style={{...ss,fontSize:12,color:GREEN,marginBottom:4}}>Registration confirmed — {regStatus.message}</div>}
+          {regStatus?.error&&<div style={{...ss,fontSize:12,color:AMBER,marginBottom:4}}>Error: {regStatus.error}</div>}
+          {testEmailStatus&&<div style={{...ss,fontSize:12,color:testEmailStatus.status==="SENT"?GREEN:AMBER,marginBottom:4}}>{testEmailStatus.status==="SENT"?"Test email sent successfully — check your inbox.":"Error: "+testEmailStatus.message}</div>}
+          <div style={{...sm,fontSize:9,color:MUTED,marginTop:8,lineHeight:1.7}}>Alert levels: Watch (minor increase) · Warning (significant increase, field visit recommended) · Critical (major disturbance, immediate action required)</div>
+        </div>
+
+        <div style={{height:80}}/>
+      </div>
+    </div>
+  );
+}
+
+// ── INTELLIGENCE HUB TAB ──
+// Combines: Disease Intelligence, Risk Matrix, Scenario Simulator, Air Quality, Crop Insurance, Dam Risk
+function IntelligenceTab({
+  activeRegion,setActiveRegion,
+  diseaseData,diseaseLoading,runDisease,
+  riskData,riskLoading,runRisk,
+  scData,scLoading,scScenario,setScScenario,scIntensity,setScIntensity,scRegion,setScRegion,runScenario,
+  airData,airLoading,runAir,
+  insuranceData,insuranceLoading,runInsurance,
+  damData,damLoading,runDam,
+}){
+  const [activeSection,setActiveSection]=useState("disease");
+  const ss={fontFamily:"Inter,'Segoe UI',system-ui,sans-serif"};
+  const sm={fontFamily:"'DM Mono','Fira Mono',monospace"};
+
+  const SECTIONS=[
+    {key:"disease",label:"Disease Intelligence",desc:"6 predictive health models"},
+    {key:"risk",label:"Risk Matrix",desc:"Quantum kernel risk scoring"},
+    {key:"scenario",label:"Scenario Simulator",desc:"What-if policy analysis"},
+    {key:"air",label:"Air Quality",desc:"Mercury vapour & PM2.5"},
+    {key:"crop",label:"Crop Insurance",desc:"Parametric satellite insurance"},
+    {key:"dam",label:"Dam Risk",desc:"Tailings dam collapse predictor"},
+  ];
+
+  return(
+    <div className="tab-content" style={{background:BG}}>
+      <div style={{padding:"16px 20px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{...ss,fontSize:16,fontWeight:600,color:TEXT,marginRight:8}}>Intelligence Hub</div>
+        {SECTIONS.map(s=>(
+          <button key={s.key} onClick={()=>setActiveSection(s.key)}
+            style={{padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:activeSection===s.key?600:400,border:`1px solid ${activeSection===s.key?CYAN:BORDER2}`,background:activeSection===s.key?`${CYAN}14`:"transparent",color:activeSection===s.key?CYAN:MUTED,cursor:"pointer",whiteSpace:"nowrap"}}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Region selector */}
+      <div style={{padding:"10px 20px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+        <span style={{...sm,fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginRight:4}}>Region</span>
+        {REGIONS.map(r=>(
+          <button key={r.name} onClick={()=>{setActiveRegion(r.name);setScRegion&&setScRegion(r.name);}}
+            style={{padding:"4px 9px",borderRadius:5,fontSize:11,fontWeight:activeRegion===r.name?600:400,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}10`:"transparent",color:activeRegion===r.name?CYAN:MUTED,cursor:"pointer"}}>
+            {r.name.replace(" Region","")}
+          </button>
+        ))}
+        {activeRegion&&(
+          <button onClick={()=>{
+            if(activeSection==="disease") runDisease(activeRegion);
+            else if(activeSection==="risk") runRisk(activeRegion);
+            else if(activeSection==="air") runAir(activeRegion);
+            else if(activeSection==="crop") runInsurance(activeRegion);
+            else if(activeSection==="dam") runDam(activeRegion);
+            else if(activeSection==="scenario") runScenario(scRegion||activeRegion,scScenario,scIntensity);
+          }} className="btn-primary btn" style={{marginLeft:8}}>
+            Run {SECTIONS.find(s=>s.key===activeSection)?.label}
+          </button>
+        )}
+      </div>
+
+      {/* Content */}
+      <div style={{flex:1,overflowY:"auto",padding:20}}>
+        {activeSection==="disease"&&<DiseaseTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} diseaseData={diseaseData} diseaseLoading={diseaseLoading} runDisease={runDisease} embedded={true}/>}
+        {activeSection==="risk"&&<RiskTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} riskData={riskData} riskLoading={riskLoading} runRisk={runRisk} embedded={true}/>}
+        {activeSection==="scenario"&&<ScenarioTab scRegion={scRegion} setScRegion={setScRegion} scScenario={scScenario} setScScenario={setScScenario} scIntensity={scIntensity} setScIntensity={setScIntensity} scData={scData} scLoading={scLoading} runScenario={runScenario} embedded={true}/>}
+        {activeSection==="air"&&<AirTab airData={airData} airLoading={airLoading} runAir={runAir} embedded={true}/>}
+        {activeSection==="crop"&&<InsuranceTab insuranceData={insuranceData} insuranceLoading={insuranceLoading} runInsurance={runInsurance} embedded={true}/>}
+        {activeSection==="dam"&&<DamTab damData={damData} damLoading={damLoading} runDam={runDam} embedded={true}/>}
+      </div>
+    </div>
+  );
+}
+
+// ── QUANTUM HUB TAB ──
+// Combines: Quantum Optimizer + Criminal Network
+function QuantumHubTab({
+  activeRegion,setActiveRegion,
+  qData,qLoading,qType,setQType,runQuantum,
+  criminalData,criminalLoading,runCriminal,
+}){
+  const [activeSection,setActiveSection]=useState("optimizer");
+  const ss={fontFamily:"Inter,'Segoe UI',system-ui,sans-serif"};
+  const sm={fontFamily:"'DM Mono','Fira Mono',monospace"};
+
+  const SECTIONS=[
+    {key:"optimizer",label:"Quantum Optimizer",desc:"QAOA land use + route planning"},
+    {key:"criminal",label:"Criminal Network",desc:"Supply chain and network analysis"},
+  ];
+
+  return(
+    <div className="tab-content" style={{background:BG}}>
+      <div style={{padding:"16px 20px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{...ss,fontSize:16,fontWeight:600,color:TEXT,marginRight:8}}>Quantum Analysis</div>
+        {SECTIONS.map(s=>(
+          <button key={s.key} onClick={()=>setActiveSection(s.key)}
+            style={{padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:activeSection===s.key?600:400,border:`1px solid ${activeSection===s.key?PURPLE:BORDER2}`,background:activeSection===s.key?`${PURPLE}14`:"transparent",color:activeSection===s.key?PURPLE:MUTED,cursor:"pointer"}}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Region selector */}
+      <div style={{padding:"10px 20px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+        <span style={{...sm,fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginRight:4}}>Region</span>
+        {REGIONS.map(r=>(
+          <button key={r.name} onClick={()=>{setActiveRegion(r.name);if(activeSection==="optimizer") runQuantum(r.name,qType); else runCriminal(r.name);}}
+            style={{padding:"4px 9px",borderRadius:5,fontSize:11,fontWeight:activeRegion===r.name?600:400,border:`1px solid ${activeRegion===r.name?PURPLE:BORDER2}`,background:activeRegion===r.name?`${PURPLE}10`:"transparent",color:activeRegion===r.name?PURPLE:MUTED,cursor:"pointer"}}>
+            {r.name.replace(" Region","")}
+          </button>
+        ))}
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:20}}>
+        {activeSection==="optimizer"&&<QuantumTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} qData={qData} qLoading={qLoading} qType={qType} setQType={setQType} runQuantum={runQuantum} embedded={true}/>}
+        {activeSection==="criminal"&&<CriminalTab criminalData={criminalData} criminalLoading={criminalLoading} runCriminal={runCriminal} embedded={true}/>}
+      </div>
+    </div>
+  );
+}
+
+// ── ANNOTATION TAB ──
+// ML training data collection tool
+// Labels satellite tiles for CNN/Random Forest training
+function AnnotateTab(){
+  const ss={fontFamily:"Inter,'Segoe UI',system-ui,sans-serif"};
+  const sm={fontFamily:"'DM Mono','Fira Mono',monospace"};
+  const API="https://qgif-backend.onrender.com";
+
+  const LABELS=[
+    {key:"mining",label:"Mining",color:"#EF4444",desc:"Illegal mining pit, excavation, or tailings"},
+    {key:"forest",label:"Forest",color:"#10B981",desc:"Dense healthy vegetation or forest cover"},
+    {key:"water",label:"Water",color:"#0EA5E9",desc:"River, lake, or water body"},
+    {key:"farmland",label:"Farmland",color:"#F59E0B",desc:"Agricultural land, crops, or farm clearing"},
+    {key:"settlement",label:"Settlement",color:"#8B5CF6",desc:"Town, village, buildings, or urban area"},
+  ];
+
+  const KNOWN_MINING=[
+    {name:"Tarkwa (Western Region)",lat:5.31,lng:-1.99,type:"mining"},
+    {name:"Obuasi (Ashanti Region)",lat:6.20,lng:-1.68,type:"mining"},
+    {name:"Prestea (Western Region)",lat:5.43,lng:-2.14,type:"mining"},
+    {name:"Bogoso (Western Region)",lat:5.54,lng:-2.07,type:"mining"},
+    {name:"Dunkwa (Central Region)",lat:5.97,lng:-1.78,type:"mining"},
+    {name:"Konongo (Ashanti Region)",lat:6.62,lng:-1.22,type:"mining"},
+    {name:"Bibiani (Western Region)",lat:6.46,lng:-2.32,type:"mining"},
+    {name:"Amenfi (Western Region)",lat:5.75,lng:-2.35,type:"mining"},
+  ];
+
+  const KNOWN_CLEAN=[
+    {name:"Lawra (Upper West Region)",lat:10.63,lng:-2.91,type:"forest"},
+    {name:"Wa (Upper West Region)",lat:10.06,lng:-2.50,type:"forest"},
+    {name:"Damongo (Northern Region)",lat:9.08,lng:-1.82,type:"farmland"},
+    {name:"Bolgatanga (Upper East Region)",lat:10.78,lng:-0.85,type:"farmland"},
+    {name:"Keta (Volta Region)",lat:5.91,lng:0.99,type:"water"},
+    {name:"Winneba (Central Region)",lat:5.35,lng:-0.63,type:"settlement"},
+    {name:"Cape Coast (Central Region)",lat:5.10,lng:-1.24,type:"settlement"},
+    {name:"Hohoe (Volta Region)",lat:7.15,lng:0.47,type:"forest"},
+  ];
+
+  const ALL_LOCATIONS=[...KNOWN_MINING,...KNOWN_CLEAN];
+
+  const [annotations,setAnnotations]=useState(()=>{
+    try{const s=localStorage.getItem("qgif_annotations");return s?JSON.parse(s):[];}
+    catch(e){return [];}
+  });
+  const [currentIdx,setCurrentIdx]=useState(0);
+  const [loading,setLoading]=useState(false);
+  const [currentData,setCurrentData]=useState(null);
+  const [error,setError]=useState(null);
+  const [annotatorName,setAnnotatorName]=useState("Maxwell");
+  const [showExport,setShowExport]=useState(false);
+
+  const saveAnnotations=(ann)=>{
+    setAnnotations(ann);
+    try{localStorage.setItem("qgif_annotations",JSON.stringify(ann));}catch(e){}
+  };
+
+  const loadLocation=async(idx)=>{
+    const loc=ALL_LOCATIONS[idx];
+    if(!loc)return;
+    setLoading(true);setCurrentData(null);setError(null);
+    try{
+      const r=await fetch(API+"/detect-live",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({lat:loc.lat,lng:loc.lng,name:loc.name})
+      });
+      const d=await r.json();
+      setCurrentData({...d,location:loc});
+    }catch(e){
+      setError("Could not load satellite data: "+e.message);
+    }finally{setLoading(false);}
+  };
+
+  useEffect(()=>{loadLocation(currentIdx);},[currentIdx]);
+
+  const handleLabel=(labelKey)=>{
+    if(!currentData)return;
+    const loc=ALL_LOCATIONS[currentIdx];
+    const ann={
+      id:Date.now(),
+      annotator:annotatorName,
+      annotated_at:new Date().toISOString(),
+      location_name:loc.name,
+      lat:loc.lat,
+      lng:loc.lng,
+      label:labelKey,
+      suggested_label:loc.type,
+      satellite_date:currentData.current_date||"",
+      ndvi_mean:currentData.ndvi_mean||0,
+      ndvi_p10:currentData.ndvi_p10||0,
+      bsi_mean:currentData.bsi_mean||0,
+      bsi_change:currentData.bsi_change_mean||0,
+      mndwi_mean:currentData.mndwi_mean||0,
+      ior_mean:currentData.ior_mean||0,
+      cmr_mean:currentData.cmr_mean||0,
+      ndvi_change:currentData.ndvi_change_mean||0,
+      degradation_gap:Math.round(((currentData.ndvi_mean||0)-(currentData.ndvi_p10||0))*1000)/1000,
+      water_fraction:currentData.water_fraction_pct||0,
     };
-  }
-
-  res.json({
-    location: name || `${lat}, ${lng}`,
-    coordinates: { lat: parseFloat(lat), lng: parseFloat(lng) },
-    analysis_radius_km: 5,
-    years_analyzed: years,
-    results,
-    trend,
-    methodology: 'Year-by-year Sentinel-2 analysis. Best available cloud-free image per year. NDVI and BSI calculated on land pixels (water masked).',
-  });
-});
-
-
-
-app.post('/satellite-check', async (req, res) => {
-  const { region } = req.body;
-  const r = region || 'Western Region';
-  const d = REGION_DATA[r];
-  if (!d) return res.status(400).json({ error: 'Region not found' });
-
-  if (!EE_READY) {
-    return res.json({
-      region: r,
-      earth_engine_status: 'NOT CONNECTED',
-      message: 'gee-key.json missing or Earth Engine failed to initialize. Using simulated baselines.',
-      simulated_data: { mercury_mgl: d.mercury_mgl, forest_cover_pct: d.forest_cover_pct, turbidity_ntu: d.turbidity_ntu }
-    });
-  }
-
-  try {
-    const snapshot = await getSatelliteSnapshot(d.lat, d.lng);
-    const ndviMean = Math.round(snapshot.ndvi_mean * 1000) / 1000;
-    const ndviP10 = Math.round(snapshot.ndvi_p10 * 1000) / 1000;
-    const waterPct = Math.round((snapshot.water_fraction || 0) * 1000) / 10;
-    const degradationGap = Math.round((ndviMean - ndviP10) * 1000) / 1000;
-    const degradationDetected = degradationGap > 0.2 && ndviMean > 0.35;
-    res.json({
-      region: r,
-      earth_engine_status: 'CONNECTED — REAL SATELLITE DATA',
-      coordinates: { lat: d.lat, lng: d.lng },
-      sample_area: '5km radius around region center (water bodies excluded from vegetation stats)',
-      satellite_date: new Date(snapshot.date).toISOString().split('T')[0],
-      cloud_cover_pct: Math.round(snapshot.cloud * 100) / 100,
-      water_fraction_pct: waterPct,
-      ndvi_mean: ndviMean,
-      ndvi_mean_interpretation: ndviMean > 0.5 ? 'Healthy dense vegetation across area' : ndviMean > 0.3 ? 'Mixed vegetation — partial clearing or agriculture' : 'Predominantly cleared / built-up area',
-      ndvi_p10: ndviP10,
-      ndvi_p10_interpretation: ndviP10 < 0.1 ? 'Severe bare-earth patches detected on land — possible mining or major clearing' : ndviP10 < 0.2 ? 'Some bare/degraded land patches present' : 'No severe land degradation patches detected',
-      degradation_gap: degradationGap,
-      degradation_signal: degradationDetected ? 'YES — area has mostly healthy vegetation but contains severely degraded land patches, consistent with localized mining or clearing activity' : 'No strong contrast signal in this 5km sample',
-      ndwi_mean: Math.round(snapshot.ndwi_mean * 1000) / 1000,
-      simulated_baseline: { mercury_mgl: d.mercury_mgl, forest_cover_pct: d.forest_cover_pct, turbidity_ntu: d.turbidity_ntu, illegal_sites: d.illegal_sites },
-      note: 'NDVI/NDWI are REAL Sentinel-2 measurements averaged over a 5km area, with water bodies (rivers/lakes) excluded from vegetation statistics. Mercury/turbidity/site-count values remain simulated baselines until IoT sensor network and ML detection model are deployed.'
-    });
-  } catch (e) {
-    res.json({ region: r, earth_engine_status: 'ERROR', message: e.message });
-  }
-});
-
-
-
-// ============================================================
-// PREDICT-LIVE — Blends REAL satellite data with prediction models
-// ============================================================
-
-// Convert real NDVI measurements into adjusted region inputs
-function applySatelliteAdjustment(d, snapshot) {
-  // NDVI mean → forest cover estimate (water pixels already excluded)
-  // Healthy tropical forest NDVI ~0.7-0.85. Bare/cleared ~0.1-0.3
-  // Map NDVI 0.2-0.8 range onto forest_cover_pct 5-80 range
-  const ndviMean = snapshot.ndvi_mean;
-  const ndviP10 = snapshot.ndvi_p10; // 10th percentile — robust "worst typical patch" on land only
-  const satForestCover = Math.max(5, Math.min(80, Math.round(((ndviMean - 0.15) / 0.65) * 75 + 5)));
-
-  // Degradation contrast: gap between mean and 10th-percentile NDVI on LAND only
-  // (water already masked out) — a large gap signals localized bare-earth
-  // patches within an otherwise vegetated area, consistent with mining/clearing
-  const degradationGap = Math.max(0, ndviMean - ndviP10);
-  // Map degradation gap (0 to ~0.5) onto a deforestation rate adjustment (0 to +2.5%/yr)
-  const satDeforestationBoost = Math.min(2.5, degradationGap * 5);
-
-  // NDWI mean (unmasked) + water fraction as turbidity/water-extent proxy
-  const waterFraction = snapshot.water_fraction || 0;
-  const satTurbidityFactor = Math.max(0, Math.min(1, (snapshot.ndwi_mean + 0.5) / 1.0));
-
-  return {
-    ...d,
-    forest_cover_pct: satForestCover,
-    deforestation_rate: Math.round((d.deforestation_rate * 0.4 + satDeforestationBoost) * 10) / 10,
-    turbidity_ntu: Math.round(d.turbidity_ntu * (0.6 + satTurbidityFactor * 0.8)),
-    _satellite_inputs: {
-      ndvi_mean: ndviMean,
-      ndvi_p10: ndviP10,
-      ndwi_mean: snapshot.ndwi_mean,
-      water_fraction_pct: Math.round(waterFraction * 1000) / 10,
-      satellite_date: new Date(snapshot.date).toISOString().split('T')[0],
-      cloud_cover_pct: Math.round(snapshot.cloud * 100) / 100,
-      derived_forest_cover_pct: satForestCover,
-      derived_deforestation_boost: Math.round(satDeforestationBoost * 100) / 100,
-      degradation_gap: Math.round(degradationGap * 1000) / 1000,
+    const updated=[...annotations,ann];
+    saveAnnotations(updated);
+    // Move to next location
+    if(currentIdx<ALL_LOCATIONS.length-1){
+      setCurrentIdx(currentIdx+1);
+    }else{
+      setCurrentIdx(0); // Loop back
     }
   };
-}
 
-app.post('/predict-live', async (req, res) => {
-  const { region } = req.body;
-  const r = region || 'Western Region';
-  const d = REGION_DATA[r];
-  if (!d) return res.status(400).json({ error: 'Region not found' });
-
-  if (!EE_READY) {
-    return res.json({
-      region: r,
-      live_status: 'EARTH ENGINE NOT CONNECTED',
-      message: 'gee-key.json missing or Earth Engine failed to initialize. Use /predict or /disease-intelligence for simulated-baseline predictions.',
-    });
-  }
-
-  try {
-    const snapshot = await getSatelliteSnapshot(d.lat, d.lng);
-    const liveD = applySatelliteAdjustment(d, snapshot);
-
-    const waterborne = predictWaterborneDisease(liveD, 30);
-    const mercury = predictMercuryNeurological(liveD);
-    const pandemic = predictPandemicEmergence(liveD);
-    const food = predictFoodSecurity(liveD);
-    const ecosystem = predictEcosystemTippingPoint(liveD);
-    const conflict = predictConflict(liveD);
-
-    // Run quantum risk scorer on the live-adjusted data
-    const indicators=[{name:'Illegal Mining Activity',weight:0.22},{name:'Water Contamination Level',weight:0.20},{name:'Deforestation Rate',weight:0.15},{name:'Disease Outbreak Risk',weight:0.18},{name:'Food Security Threat',weight:0.12},{name:'Climate Vulnerability',weight:0.08},{name:'Social Conflict Risk',weight:0.05}];
-    const scores=[Math.min(liveD.illegal_sites/40*100,100),Math.min(liveD.mercury_mgl/0.1*100,100),Math.min(liveD.deforestation_rate/4*100,100),Math.min(waterborne.probability_pct,100),Math.min(food.food_insecurity_probability,100),Math.min((100-liveD.forest_cover_pct)/100*100,100),Math.min(conflict.conflict_probability_pct,100)];
-    const qFeats=scores.map((s,i)=>{const phi=(s/100)*Math.PI;return{classical:s,entangled:Math.cos(phi)*Math.sin(phi+indicators[i].weight*Math.PI)};});
-    const weighted=indicators.reduce((t,ind,i)=>t+(scores[i]*ind.weight),0);
-    const qScore=weighted*(1+0.12*Math.sin(weighted/100*Math.PI));
-    const rl=qScore>75?'CRITICAL':qScore>55?'HIGH':qScore>35?'MEDIUM':'LOW';
-
-    const threat_scores = [waterborne.probability_pct/100, mercury.child_neuro_probability_pct/100, pandemic.spillover_probability_12m/100, food.food_insecurity_probability/100, 1-ecosystem.resilience_index, conflict.conflict_probability_pct/100];
-    const overall_threat = (threat_scores.reduce((a,b)=>a+b,0)/threat_scores.length)*100;
-    const threat_level = overall_threat>70?'CRITICAL':overall_threat>50?'HIGH':overall_threat>30?'MEDIUM':'LOW';
-
-    res.json({
-      region: r,
-      live_status: 'CONNECTED — LIVE SATELLITE-ADJUSTED PREDICTIONS',
-      timestamp: new Date().toISOString(),
-      data_provenance: {
-        REAL_FROM_SATELLITE: ['forest_cover_pct (derived from NDVI)', 'deforestation_rate (partially adjusted by degradation gap)', 'turbidity_ntu (partially adjusted by NDWI)'],
-        SIMULATED_BASELINE: ['mercury_mgl', 'arsenic_mgl', 'population', 'sanitation_pct', 'illegal_sites', 'rainfall_mm'],
-        explanation: 'Forest cover, deforestation rate, and turbidity are recalculated every request from live Sentinel-2 imagery. Mercury, arsenic, population, and sanitation remain research-based baselines until IoT sensors and census integration are deployed.'
-      },
-      satellite_inputs: liveD._satellite_inputs,
-      overall_threat_score: Math.round(overall_threat * 10) / 10,
-      threat_level,
-      quantum_risk: {
-        algorithm: 'Quantum Kernel Risk Assessment (live-adjusted inputs)',
-        overallScore: Math.round(qScore),
-        classicalScore: Math.round(weighted),
-        riskLevel: rl,
-        indicators: indicators.map((ind,i)=>({name:ind.name,score:Math.round(scores[i]),weight:Math.round(ind.weight*100),quantumFeature:Math.round(qFeats[i].entangled*100)/100}))
-      },
-      predictions: {
-        waterborne_disease: waterborne,
-        mercury_neurological: mercury,
-        pandemic_emergence: pandemic,
-        food_security: food,
-        ecosystem_tipping_point: ecosystem,
-        conflict: conflict,
-      },
-    });
-  } catch (e) {
-    res.json({ region: r, live_status: 'ERROR', message: e.message });
-  }
-});
-
-
-app.post('/digital-lawyer', (req, res) => {
-  const { region, communityName, reporterName, incidentType, incidentDescription } = req.body;
-  const r = region || 'Western Region';
-  const d = REGION_DATA[r] || REGION_DATA['Western Region'];
-  const community = communityName || `Community near ${d.town}`;
-  const reporter = reporterName || 'Anonymous Reporter';
-  const incident = incidentType || 'water_contamination';
-  const description = incidentDescription || 'Contamination reported in local water source';
-  const reportId = 'QGIF-' + Date.now().toString(36).toUpperCase();
-  const reportDate = new Date().toISOString();
-
-  const mercury_times = Math.round(d.mercury_mgl / 0.001);
-  const arsenic_times = Math.round(d.arsenic_mgl / 0.01);
-  const waterborne = predictWaterborneDisease(d, 30);
-  const mercury_neuro = predictMercuryNeurological(d);
-  const ecosystem = predictEcosystemTippingPoint(d);
-  const food = predictFoodSecurity(d);
-
-  // Calculate economic damages
-  const property_damage = Math.round(d.illegal_sites * d.population * 0.0003);
-  const agricultural_loss = Math.round(food.people_at_risk * 0.00085 * 1000000);
-  const healthcare_cost = Math.round(waterborne.expected_cases_week4 * 180 * 52);
-  const fisheries_loss = Math.round(d.fishing_communities * 450000 * (d.mercury_mgl / 0.001) * 0.001);
-  const total_damages = property_damage + agricultural_loss + healthcare_cost + fisheries_loss;
-
-  // UN human rights violations triggered
-  const un_violations = [];
-  if (d.mercury_mgl > 0.001) un_violations.push('Article 12 ICESCR — Right to highest attainable standard of health');
-  if (d.turbidity_ntu > 100) un_violations.push('UN Resolution 64/292 — Human Right to Safe Drinking Water');
-  if (mercury_neuro.children_at_risk > 0) un_violations.push('Article 24 CRC — Right of the Child to Health');
-  if (food.yield_reduction_pct > 20) un_violations.push('Article 11 ICESCR — Right to Adequate Food');
-  if (d.deforestation_rate > 2) un_violations.push('Article 1 ICCPR — Right of Peoples to Natural Resources');
-  un_violations.push('Ghana EPA Act 1994 Section 23 — Unlawful discharge of pollutants');
-  un_violations.push('Ghana Minerals and Mining Act 2006 — Section 19 Environmental Obligations');
-
-  // Satellite evidence timeline
-  const evidence_timeline = [
-    { date: '2020-01-01', event: 'Baseline satellite image — forest cover at ' + (d.forest_cover_pct + 8) + '%', source: 'Sentinel-2 MSI', confidence: '99%' },
-    { date: '2021-06-15', event: 'First illegal mining signatures detected — vegetation loss 2.3ha', source: 'Sentinel-1 SAR + Sentinel-2', confidence: '94%' },
-    { date: '2022-03-22', event: `Mercury contamination detected in ${d.river} — ${d.mercury_mgl} mg/L`, source: 'IoT sensor network + satellite spectral analysis', confidence: '97%' },
-    { date: '2023-01-10', event: `Illegal mining expansion — ${d.illegal_sites} active sites confirmed`, source: 'Sentinel-2 change detection', confidence: '91%' },
-    { date: '2024-05-18', event: `Water quality critical — turbidity ${d.turbidity_ntu} NTU`, source: 'IoT sensor PRX-047 + Sentinel-2 NDTI', confidence: '99%' },
-    { date: new Date().toISOString().split('T')[0], event: 'Community contamination report filed — QGIF investigation initiated', source: 'Community report + automated satellite verification', confidence: '100%' },
-  ];
-
-  // Source tracing — identify responsible parties
-  const responsible_parties = [];
-  if (d.illegal_sites > 0) {
-    responsible_parties.push({
-      party: 'Illegal Artisanal Mining Operators',
-      evidence: `${d.illegal_sites} confirmed illegal sites within ${r} detected by satellite`,
-      legal_basis: 'Ghana EPA Act 1994 S.23 — criminal liability for environmental damage',
-      action_required: 'Criminal prosecution + remediation order',
-    });
-  }
-  responsible_parties.push({
-    party: 'Ghana Environmental Protection Agency',
-    evidence: 'Failure to enforce existing regulations despite satellite evidence of violations',
-    legal_basis: 'EPA Act 1994 S.5 — duty to enforce environmental standards',
-    action_required: 'Institutional accountability review + emergency enforcement deployment',
-  });
-  responsible_parties.push({
-    party: 'Minerals Commission of Ghana',
-    evidence: 'Concession boundary violations detected by satellite — inadequate monitoring',
-    legal_basis: 'Minerals and Mining Act 2006 S.19 — environmental obligations of licence holders',
-    action_required: 'Permit review + boundary enforcement + remediation bond activation',
-  });
-
-  // Court-ready evidence summary
-  const evidence_package = {
-    report_id: reportId,
-    report_date: reportDate,
-    classification: 'ENVIRONMENTAL RIGHTS VIOLATION — COURT-ADMISSIBLE EVIDENCE',
-    community: community,
-    region: r,
-    reporter: reporter,
-    incident_type: incident,
-    incident_description: description,
-
-    executive_summary: `On ${reportDate.split('T')[0]}, QGIF received a contamination report from ${community} in ${r}, Ghana. Automated satellite analysis and IoT sensor data confirm that the ${d.river} show mercury contamination at ${d.mercury_mgl} mg/L — ${mercury_times} times above the WHO safe limit of 0.001 mg/L. This contamination is directly traceable to ${d.illegal_sites} illegal artisanal mining operations confirmed by Sentinel-2 satellite imagery. The affected community of approximately ${Math.round(d.population * 0.08).toLocaleString()} people faces immediate health risks including ${waterborne.disease} outbreak (${waterborne.probability_pct}% probability within 30 days) and long-term neurological disease risk for ${mercury_neuro.children_at_risk.toLocaleString()} children. Total quantified economic damages amount to GHS ${total_damages.toLocaleString()}.`,
-
-    contamination_evidence: {
-      mercury_level_mgl: d.mercury_mgl,
-      mercury_times_over_who_limit: mercury_times,
-      arsenic_level_mgl: d.arsenic_mgl,
-      arsenic_times_over_who_limit: arsenic_times,
-      turbidity_ntu: d.turbidity_ntu,
-      turbidity_times_over_safe: Math.round(d.turbidity_ntu / 100),
-      primary_source: `${d.illegal_sites} illegal mining sites in ${r} — confirmed by Sentinel-2 satellite imagery`,
-      contamination_pathway: `Illegal mining → tailings runoff → ${d.river} → downstream communities`,
-      satellite_confirmation: 'Sentinel-2 MSI spectral analysis + IoT sensor network — dual-confirmed',
-      data_integrity: 'Blockchain-timestamped — tamper-proof and court-admissible',
-    },
-
-    health_impact: {
-      disease_outbreak_probability_30days: waterborne.probability_pct + '%',
-      primary_disease_risk: waterborne.disease,
-      expected_cases_monthly: waterborne.expected_cases_week4,
-      children_at_neurological_risk: mercury_neuro.children_at_risk,
-      adults_at_neurological_risk: mercury_neuro.adults_at_risk,
-      neurological_severity: mercury_neuro.severity,
-      months_until_child_symptoms: mercury_neuro.months_to_symptoms_child,
-      fish_tissue_mercury_mgkg: mercury_neuro.fish_mercury_mgkg,
-      child_mercury_exposure_ratio: mercury_neuro.child_exposure_ratio + 'x WHO safe limit',
-      clinical_presentations_expected: mercury_neuro.clinical_presentations,
-    },
-
-    economic_damages: {
-      property_and_livelihood_damage_ghs: property_damage,
-      agricultural_productivity_loss_ghs: agricultural_loss,
-      healthcare_costs_annual_ghs: healthcare_cost,
-      fisheries_income_loss_ghs: fisheries_loss,
-      total_quantified_damages_ghs: total_damages,
-      note: 'Damages calculated using WHO environmental health economic methodology. Additional non-quantified damages include psychological harm, cultural losses, and long-term ecosystem service degradation.',
-    },
-
-    un_human_rights_violations: un_violations,
-
-    satellite_evidence_timeline: evidence_timeline,
-
-    responsible_parties: responsible_parties,
-
-    ecosystem_impact: {
-      forest_cover_lost_pct: d.deforestation_rate + '% annually',
-      years_to_ecosystem_collapse: ecosystem.years_to_tipping_point,
-      carbon_at_stake: ecosystem.carbon_at_stake,
-      ecosystem_services_destroyed_annually: ecosystem.annual_services_being_lost,
-      recovery_probability: ecosystem.recovery_probability,
-    },
-
-    legal_remedies_requested: [
-      'Immediate cessation of all illegal mining operations within ' + r,
-      'Emergency water treatment provision for ' + community + ' and surrounding communities',
-      'Criminal prosecution of identified illegal mining operators under EPA Act 1994 S.23',
-      'Mandatory remediation order with financial bond — minimum GHS ' + Math.round(total_damages * 0.3).toLocaleString(),
-      'Medical screening programme for ' + mercury_neuro.children_at_risk.toLocaleString() + ' children at neurological risk',
-      'Quarterly satellite monitoring compliance reports filed with Ghana EPA',
-      'Community compensation fund — minimum GHS ' + Math.round(total_damages * 0.5).toLocaleString(),
-    ],
-
-    international_reporting_obligations: [
-      'ECOWAS Environmental Policy — transboundary pollution notification required',
-      'UN Environment Programme — PRTR toxic release inventory update required',
-      'WHO Global Health Observatory — outbreak risk notification threshold exceeded',
-      'African Commission on Human and Peoples Rights — Article 24 violation reportable',
-    ],
-
-    certification: {
-      generated_by: 'QGIF — Quantum Geospatial Intelligence Framework',
-      institution: 'University of Energy and Natural Resources, Sunyani, Ghana',
-      data_sources: 'ESA Sentinel-1/2, NASA Landsat-8/9, IoT sensor network, Ghana EPA database',
-      methodology: 'WHO environmental health assessment standards + IPC food security methodology + Scheffer ecosystem tipping point theory',
-      blockchain_hash: 'QGIF-' + Math.random().toString(36).substr(2, 16).toUpperCase(),
-      admissibility: 'Evidence package meets standards for Ghana High Court, ECOWAS Community Court of Justice, and African Commission on Human and Peoples Rights',
-    },
+  const skipLocation=()=>{
+    if(currentIdx<ALL_LOCATIONS.length-1) setCurrentIdx(currentIdx+1);
+    else setCurrentIdx(0);
   };
 
-  res.json(evidence_package);
-});
-
-// ============================================================
-// FEATURE 2: TAILINGS DAM COLLAPSE PREDICTOR
-// ============================================================
-
-app.post('/dam-risk', (req, res) => {
-  const { region, damName, damAge, heightMeters, tailingsVolumeMCubic, lastInspectionDays, rainfallLast30Days } = req.body;
-  const r = region || 'Western Region';
-  const d = REGION_DATA[r] || REGION_DATA['Western Region'];
-
-  const age = damAge || 15;
-  const height = heightMeters || 45;
-  const volume = tailingsVolumeMCubic || 12;
-  const daysSinceInspection = lastInspectionDays || 180;
-  const recentRainfall = rainfallLast30Days || d.rainfall_mm / 12;
-  const dam = damName || `Tailings Dam — ${d.town}`;
-
-  // Structural failure model based on ICOLD (International Commission on Large Dams)
-  // Key failure factors: age, height, rainfall, inspection frequency, seismic risk
-
-  // Age factor — failure rate increases with age (exponential)
-  const age_factor = 1 - Math.exp(-age / 25);
-
-  // Height factor — taller dams have higher consequence
-  const height_factor = Math.min(height / 100, 1);
-
-  // Rainfall saturation factor — recent heavy rain increases pore pressure
-  const optimal_monthly_rainfall = d.rainfall_mm / 12;
-  const rainfall_factor = Math.min(recentRainfall / optimal_monthly_rainfall, 2) / 2;
-
-  // Inspection gap factor — longer gaps = higher unknown risk
-  const inspection_factor = Math.min(daysSinceInspection / 365, 1);
-
-  // Volume consequence factor — more tailings = bigger disaster
-  const volume_factor = Math.min(volume / 20, 1);
-
-  // Combined failure probability (ICOLD statistical model)
-  const structural_failure_prob = (
-    age_factor * 0.25 +
-    height_factor * 0.20 +
-    rainfall_factor * 0.25 +
-    inspection_factor * 0.15 +
-    volume_factor * 0.15
-  ) * 100;
-
-  // Time to critical condition
-  const days_to_critical = Math.max(7, Math.round(180 * (1 - structural_failure_prob / 100)));
-
-  // Downstream impact
-  const downstream_population = Math.round(d.population * 0.08 * (height / 50));
-  const flood_wave_speed_kmh = Math.round(height * 1.8);
-  const inundation_area_km2 = Math.round(volume * height * 0.4);
-
-  // Warning signals to monitor
-  const warning_signals = [];
-  if (rainfall_factor > 0.7)        warning_signals.push({ severity: 'CRITICAL', signal: 'Rainfall saturation approaching capacity — pore pressure building' });
-  if (age_factor > 0.6)             warning_signals.push({ severity: 'HIGH', signal: 'Dam age exceeds median failure threshold — structural assessment required' });
-  if (inspection_factor > 0.5)      warning_signals.push({ severity: 'HIGH', signal: 'Inspection gap exceeds safe monitoring interval' });
-  if (height_factor > 0.5)          warning_signals.push({ severity: 'MEDIUM', signal: 'Dam height in upper risk category — seepage monitoring critical' });
-  if (volume_factor > 0.7)          warning_signals.push({ severity: 'HIGH', signal: 'Tailings volume approaching design capacity' });
-  if (warning_signals.length === 0) warning_signals.push({ severity: 'LOW', signal: 'No critical warning signals detected — continue routine monitoring' });
-
-  // Satellite monitoring indicators
-  const satellite_indicators = [
-    { indicator: 'Dam wall deformation', method: 'InSAR satellite radar — millimetre precision', status: structural_failure_prob > 60 ? 'ANOMALY DETECTED' : 'NORMAL', value: `${(structural_failure_prob * 0.02).toFixed(2)}mm/month settlement` },
-    { indicator: 'Seepage zones', method: 'Sentinel-2 moisture index analysis', status: rainfall_factor > 0.6 ? 'ELEVATED' : 'NORMAL', value: `Moisture anomaly: ${(rainfall_factor * 100).toFixed(0)}% above baseline` },
-    { indicator: 'Downstream water quality', method: 'IoT sensor network + spectral analysis', status: d.turbidity_ntu > 200 ? 'CONTAMINATED' : 'ACCEPTABLE', value: `Turbidity ${d.turbidity_ntu} NTU` },
-    { indicator: 'Vegetation stress around dam', method: 'NDVI change detection', status: structural_failure_prob > 50 ? 'STRESS DETECTED' : 'NORMAL', value: `NDVI: ${(0.45 - structural_failure_prob * 0.003).toFixed(2)}` },
-  ];
-
-  const risk_level = structural_failure_prob > 70 ? 'CRITICAL' :
-                     structural_failure_prob > 50 ? 'HIGH' :
-                     structural_failure_prob > 30 ? 'MEDIUM' : 'LOW';
-
-  res.json({
-    dam_name: dam,
-    region: r,
-    risk_level,
-    failure_probability_pct: Math.round(structural_failure_prob * 10) / 10,
-    days_to_critical_condition: days_to_critical,
-    algorithm: 'ICOLD Statistical Failure Model + Satellite Structural Monitoring',
-
-    structural_factors: {
-      age_risk_factor: Math.round(age_factor * 100),
-      height_risk_factor: Math.round(height_factor * 100),
-      rainfall_saturation_factor: Math.round(rainfall_factor * 100),
-      inspection_gap_factor: Math.round(inspection_factor * 100),
-      volume_risk_factor: Math.round(volume_factor * 100),
-    },
-
-    downstream_impact: {
-      population_at_risk: downstream_population,
-      flood_wave_speed_kmh,
-      inundation_area_km2,
-      warning_time_minutes: Math.round((10 / flood_wave_speed_kmh) * 60),
-      comparable_disaster: 'Brumadinho, Brazil 2019 — 270 deaths, USD 7 billion damage',
-    },
-
-    warning_signals,
-    satellite_indicators,
-
-    immediate_actions: risk_level === 'CRITICAL' ? [
-      'EVACUATE downstream communities within 5km — do not wait for confirmation',
-      'Emergency structural inspection within 24 hours by certified geotechnical engineer',
-      'Notify Ghana EPA Emergency Response Unit immediately',
-      'Install emergency piezometers to monitor pore water pressure',
-      'Reduce tailings discharge rate by 50% immediately',
-    ] : risk_level === 'HIGH' ? [
-      'Schedule emergency structural inspection within 7 days',
-      'Increase seepage monitoring frequency to daily readings',
-      'Prepare downstream evacuation plan and community notification system',
-      'Review and activate emergency spillway capacity',
-    ] : [
-      'Continue routine monthly monitoring',
-      'Schedule next inspection within 90 days',
-      'Maintain community early warning notification system',
-    ],
-
-    monitoring_protocol: {
-      satellite_frequency: 'Every 5 days — Sentinel-1 InSAR + Sentinel-2 optical',
-      iot_sensors_required: ['Piezometers', 'Seepage measurement weirs', 'Inclinometers', 'Settlement plates', 'Rain gauges'],
-      inspection_interval_days: Math.max(30, Math.round(90 * (1 - structural_failure_prob / 100))),
-    },
-  });
-});
-
-// ============================================================
-// FEATURE 3: PARAMETRIC CROP INSURANCE
-// ============================================================
-
-app.post('/crop-insurance', (req, res) => {
-  const { region, farmSizeHectares, cropType, farmLat, farmLng } = req.body;
-  const r = region || 'Western Region';
-  const d = REGION_DATA[r] || REGION_DATA['Western Region'];
-  const farmSize = farmSizeHectares || 2;
-  const crop = cropType || 'cocoa';
-
-  // Crop parameters from Ghana agricultural research
-  const cropData = {
-    cocoa:   { baseYield_kg_ha: 450,  priceGHSperKg: 28,  droughtThreshold: 0.6, contaminationSensitivity: 0.8 },
-    maize:   { baseYield_kg_ha: 1800, priceGHSperKg: 3.2, droughtThreshold: 0.5, contaminationSensitivity: 0.5 },
-    cassava: { baseYield_kg_ha: 12000,priceGHSperKg: 0.8, droughtThreshold: 0.3, contaminationSensitivity: 0.3 },
-    yam:     { baseYield_kg_ha: 8000, priceGHSperKg: 1.2, droughtThreshold: 0.4, contaminationSensitivity: 0.4 },
-    rice:    { baseYield_kg_ha: 2500, priceGHSperKg: 4.5, droughtThreshold: 0.7, contaminationSensitivity: 0.6 },
+  const exportCSV=()=>{
+    if(annotations.length===0)return;
+    const headers=["id","annotator","annotated_at","location_name","lat","lng","label","suggested_label","satellite_date","ndvi_mean","ndvi_p10","bsi_mean","bsi_change","mndwi_mean","ior_mean","cmr_mean","ndvi_change","degradation_gap","water_fraction"];
+    const rows=annotations.map(a=>headers.map(h=>a[h]??'').join(','));
+    const csv=[headers.join(','),...rows].join('\n');
+    const blob=new Blob([csv],{type:'text/csv'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download='qgif_training_dataset.csv';
+    document.body.appendChild(a);a.click();
+    document.body.removeChild(a);URL.revokeObjectURL(url);
   };
 
-  const cropInfo = cropData[crop] || cropData.cocoa;
-
-  // Calculate trigger indices from satellite data
-  const rainfall_adequacy = Math.min(d.rainfall_mm / 1400, 1);
-  const contamination_index = Math.min(d.arsenic_mgl / 0.02, 1);
-  const drought_index = 1 - rainfall_adequacy;
-
-  // Actual yield calculation
-  const drought_loss_factor = drought_index > cropInfo.droughtThreshold ? (drought_index - cropInfo.droughtThreshold) / (1 - cropInfo.droughtThreshold) : 0;
-  const contamination_loss_factor = contamination_index * cropInfo.contaminationSensitivity;
-  const total_yield_loss_pct = Math.min((drought_loss_factor * 0.6 + contamination_loss_factor * 0.4) * 100, 85);
-
-  // Financial calculations
-  const expected_yield_kg = Math.round(cropInfo.baseYield_kg_ha * farmSize * (1 - total_yield_loss_pct / 100));
-  const expected_revenue_ghs = Math.round(expected_yield_kg * cropInfo.priceGHSperKg);
-  const normal_revenue_ghs = Math.round(cropInfo.baseYield_kg_ha * farmSize * cropInfo.priceGHSperKg);
-  const revenue_loss_ghs = normal_revenue_ghs - expected_revenue_ghs;
-
-  // Insurance payout calculation
-  const deductible_pct = 20; // Farmer bears first 20%
-  const payout_trigger_pct = 30; // Insurance pays when loss exceeds 30%
-  const insurance_payout_ghs = total_yield_loss_pct > payout_trigger_pct ?
-    Math.round(revenue_loss_ghs * (1 - deductible_pct / 100)) : 0;
-
-  // Premium calculation (actuarial basis)
-  const base_premium_pct = 4.5; // Base premium as % of insured value
-  const risk_loading = (drought_index * 0.5 + contamination_index * 0.5) * 3;
-  const annual_premium_ghs = Math.round(normal_revenue_ghs * (base_premium_pct + risk_loading) / 100);
-
-  // Satellite trigger conditions
-  const triggers = [
-    {
-      trigger: 'Drought',
-      index: 'Normalized Difference Vegetation Index (NDVI)',
-      satellite: 'Sentinel-2 Band 8 and Band 4',
-      threshold: `NDVI below ${cropInfo.droughtThreshold.toFixed(2)} for 3 consecutive weeks`,
-      current_status: rainfall_adequacy < cropInfo.droughtThreshold ? 'TRIGGERED' : 'NOT TRIGGERED',
-      current_value: `NDVI ${(rainfall_adequacy * 0.6 + 0.2).toFixed(2)} (threshold: ${cropInfo.droughtThreshold})`,
-    },
-    {
-      trigger: 'Contamination',
-      index: 'Soil arsenic proxy from spectral reflectance',
-      satellite: 'Sentinel-2 + IoT soil sensor network',
-      threshold: `Arsenic above 0.020 mg/L in irrigation water`,
-      current_status: d.arsenic_mgl > 0.02 ? 'TRIGGERED' : 'NOT TRIGGERED',
-      current_value: `Arsenic ${d.arsenic_mgl} mg/L (threshold: 0.020 mg/L)`,
-    },
-    {
-      trigger: 'Flood',
-      index: 'Normalized Difference Water Index (NDWI)',
-      satellite: 'Sentinel-1 SAR (cloud-penetrating)',
-      threshold: 'Water inundation of farm plot for more than 72 hours',
-      current_status: 'MONITORING',
-      current_value: 'No flood event detected in current period',
-    },
-  ];
-
-  res.json({
-    region: r,
-    crop_type: crop,
-    farm_size_ha: farmSize,
-    policy_id: 'QGIF-INS-' + Date.now().toString(36).toUpperCase(),
-
-    yield_assessment: {
-      normal_yield_kg_ha: cropInfo.baseYield_kg_ha,
-      expected_yield_this_season_kg: expected_yield_kg,
-      yield_loss_pct: Math.round(total_yield_loss_pct * 10) / 10,
-      drought_loss_contribution_pct: Math.round(drought_loss_factor * 100),
-      contamination_loss_contribution_pct: Math.round(contamination_loss_factor * 100),
-    },
-
-    financial_assessment: {
-      normal_revenue_ghs,
-      expected_revenue_ghs,
-      revenue_loss_ghs,
-      insurance_payout_ghs,
-      annual_premium_ghs,
-      benefit_ratio: insurance_payout_ghs > 0 ? (insurance_payout_ghs / annual_premium_ghs).toFixed(1) : 'N/A',
-    },
-
-    satellite_triggers: triggers,
-
-    payout_conditions: {
-      trigger_threshold_pct: payout_trigger_pct,
-      deductible_pct,
-      payout_will_occur: insurance_payout_ghs > 0,
-      payout_timeline: '48 hours after satellite confirmation of trigger event',
-      payment_method: 'Mobile money — no paperwork, no inspector visit required',
-    },
-
-    market_intelligence: {
-      current_price_ghs_per_kg: cropInfo.priceGHSperKg,
-      price_trend: total_yield_loss_pct > 30 ? 'Prices rising — regional yield shortfall expected' : 'Prices stable',
-      sell_now_or_wait: total_yield_loss_pct > 40 ? 'SELL NOW — prices will fall as imports arrive' : 'HOLD — prices expected to improve next quarter',
-      recommended_buyers: ['Ghana Cocoa Board (COCOBOD)', 'Local cooperative society', 'Direct export if certified'],
-    },
-
-    agronomic_advice: {
-      soil_safety: d.arsenic_mgl > 0.02 ? 'UNSAFE — apply lime at 2 tonnes/ha to reduce arsenic uptake' : 'SAFE for cultivation',
-      irrigation_safety: d.mercury_mgl > 0.01 ? 'UNSAFE — use borehole water only, minimum 2km from river' : 'SAFE with monitoring',
-      recommended_inputs: crop === 'cocoa' ? 'Apply NPK 12-12-17 at 250kg/ha, potassium sulfate at 100kg/ha' : 'Apply compound fertiliser at recommended rate',
-      planting_calendar: `Optimal planting window for ${r}: ${d.rainfall_mm > 1400 ? 'March to April (major season)' : 'April to May — delayed due to lower rainfall'}`,
-    },
-  });
-});
-
-// ============================================================
-// FEATURE 4: REAL-TIME AIR QUALITY SMS ALERT SYSTEM
-// ============================================================
-
-app.post('/air-quality', (req, res) => {
-  const { region } = req.body;
-  const r = region || 'Western Region';
-  const d = REGION_DATA[r] || REGION_DATA['Western Region'];
-
-  // Calculate air quality indices from environmental data
-  // Mercury vapour concentration (ng/m3) — estimated from water mercury proxy
-  const mercury_vapour_ng_m3 = Math.round(d.mercury_mgl * 12000);
-  const WHO_mercury_air_limit = 1000; // ng/m3 annual average
-  const mercury_air_times_over = Math.round(mercury_vapour_ng_m3 / WHO_mercury_air_limit * 10) / 10;
-
-  // PM2.5 estimation from illegal mining activity
-  const pm25_ugm3 = Math.round(d.illegal_sites * 8.5 + d.deforestation_rate * 12);
-  const WHO_pm25_limit = 15; // ug/m3 annual mean (2021 guideline)
-  const pm25_times_over = Math.round(pm25_ugm3 / WHO_pm25_limit * 10) / 10;
-
-  // SO2 from ore processing
-  const so2_ugm3 = Math.round(d.illegal_sites * 15 + 20);
-  const WHO_so2_limit = 40; // ug/m3 24-hour mean
-
-  // Air Quality Index calculation (Ghana EPA AQI method)
-  const aqi = Math.round((pm25_ugm3 / WHO_pm25_limit) * 50 + (so2_ugm3 / WHO_so2_limit) * 30 + (mercury_vapour_ng_m3 / WHO_mercury_air_limit) * 20);
-  const aqi_category = aqi > 200 ? 'HAZARDOUS' : aqi > 150 ? 'VERY UNHEALTHY' : aqi > 100 ? 'UNHEALTHY' : aqi > 50 ? 'MODERATE' : 'GOOD';
-
-  // Wind dispersion model — which communities affected
-  const affected_radius_km = Math.round(Math.sqrt(d.illegal_sites) * 4.2);
-  const affected_population = Math.round(d.population * (affected_radius_km / 80));
-
-  // Health impact by pollutant
-  const health_impacts = [];
-  if (mercury_vapour_ng_m3 > WHO_mercury_air_limit) {
-    health_impacts.push({
-      pollutant: 'Mercury vapour',
-      concentration: mercury_vapour_ng_m3 + ' ng/m3',
-      who_limit: WHO_mercury_air_limit + ' ng/m3',
-      times_over: mercury_air_times_over,
-      health_effect: 'Neurological damage, kidney failure, tremors',
-      most_vulnerable: 'Pregnant women, children under 5, elderly',
-      recommendation: 'Stay indoors, seal windows, do not consume local fish',
-    });
-  }
-  if (pm25_ugm3 > WHO_pm25_limit) {
-    health_impacts.push({
-      pollutant: 'Fine particles PM2.5',
-      concentration: pm25_ugm3 + ' ug/m3',
-      who_limit: WHO_pm25_limit + ' ug/m3',
-      times_over: pm25_times_over,
-      health_effect: 'Respiratory disease, cardiovascular damage, lung cancer risk',
-      most_vulnerable: 'Children, elderly, people with asthma',
-      recommendation: 'Wear N95 mask outdoors, keep children inside during peak hours',
-    });
-  }
-  if (so2_ugm3 > WHO_so2_limit) {
-    health_impacts.push({
-      pollutant: 'Sulphur dioxide SO2',
-      concentration: so2_ugm3 + ' ug/m3',
-      who_limit: WHO_so2_limit + ' ug/m3',
-      times_over: Math.round(so2_ugm3 / WHO_so2_limit * 10) / 10,
-      health_effect: 'Respiratory irritation, bronchitis, asthma attacks',
-      most_vulnerable: 'People with respiratory conditions',
-      recommendation: 'Avoid outdoor exercise, keep rescue inhaler available',
-    });
-  }
-
-  // SMS alert templates in multiple languages
-  const sms_alerts = {
-    english: `⚠ QGIF AIR QUALITY ALERT — ${r}
-AQI: ${aqi} (${aqi_category})
-Mercury: ${mercury_air_times_over}x safe limit
-PM2.5: ${pm25_times_over}x safe limit
-Action: ${aqi > 150 ? 'STAY INDOORS. Keep children inside. Do not cook outdoors.' : 'Limit outdoor activity. Wear mask if possible.'}
-Alert ends: Monitor QGIF for all-clear.
-— QGIF Health System`,
-
-    twi: `⚠ QGIF MFRAMA NHYEHYEE — ${r}
-Mframa mu tete: ${aqi} (${aqi_category === 'HAZARDOUS' ? 'ABOHYEN' : aqi_category === 'UNHEALTHY' ? 'YARESOM' : 'HWEHWE'})
-Asem: ${aqi > 150 ? 'FA WO BA BI DA. Mma mmirika nyinaa ntena aman mu.' : 'Kari mask a wofa so.'}
-— QGIF Apomuden Nhyehyee`,
-  };
-
-  // Forecast for next 24 hours
-  const forecast = [];
-  for (let h = 0; h < 24; h += 6) {
-    const hour = (new Date().getHours() + h) % 24;
-    const morning_factor = (hour >= 6 && hour <= 10) ? 1.3 : 1.0; // Worse in morning
-    const wind_factor = (hour >= 12 && hour <= 16) ? 0.8 : 1.0;   // Better midday
-    forecast.push({
-      time: `+${h}h (${hour}:00)`,
-      predicted_aqi: Math.round(aqi * morning_factor * wind_factor),
-      category: Math.round(aqi * morning_factor * wind_factor) > 150 ? 'UNHEALTHY' : 'MODERATE',
-    });
-  }
-
-  res.json({
-    region: r,
-    timestamp: new Date().toISOString(),
-    aqi,
-    aqi_category,
-    alert_level: aqi > 150 ? 'RED — Emergency health alert' : aqi > 100 ? 'ORANGE — Health warning' : aqi > 50 ? 'YELLOW — Monitor' : 'GREEN — Safe',
-    affected_radius_km,
-    affected_population,
-    pollutants: {
-      mercury_vapour_ng_m3,
-      mercury_times_over_who_limit: mercury_air_times_over,
-      pm25_ugm3,
-      pm25_times_over_who_limit: pm25_times_over,
-      so2_ugm3,
-    },
-    health_impacts,
-    sms_alerts,
-    forecast_24h: forecast,
-    communities_to_alert: Math.round(d.fishing_communities * 1.4),
-    estimated_sms_cost_ghs: Math.round(d.fishing_communities * 1.4 * 800 * 0.05),
-    satellite_data_source: 'Sentinel-5P TROPOMI + IoT ground sensor network',
-  });
-});
-
-// ============================================================
-// FEATURE 5: CRIMINAL NETWORK INTELLIGENCE
-// ============================================================
-
-app.post('/criminal-network', (req, res) => {
-  const { region } = req.body;
-  const r = region || 'Western Region';
-  const d = REGION_DATA[r] || REGION_DATA['Western Region'];
-
-  // Network analysis based on satellite site detection patterns
-  // Equipment movement signatures, gold processing locations, transport routes
-
-  const network_size = Math.round(d.illegal_sites * 3.2); // Average 3.2 operators per site
-  const estimated_gold_kg_month = Math.round(d.illegal_sites * 18.5); // Average yield per site
-  const estimated_revenue_ghs_month = Math.round(estimated_gold_kg_month * 3200); // Gold price per kg
-
-  // Network hierarchy (quantum graph analysis output)
-  const network_layers = [
-    {
-      level: 1,
-      role: 'Financiers and Investors',
-      estimated_count: Math.round(d.illegal_sites * 0.3),
-      location: 'Primarily urban — Accra, Kumasi, and international connections',
-      evidence_type: 'Financial transaction pattern analysis + satellite equipment tracking',
-      legal_exposure: 'Economic and Organised Crime Office (EOCO) — money laundering charges',
-      estimated_profit_share_pct: 45,
-    },
-    {
-      level: 2,
-      role: 'Site Operators and Managers',
-      estimated_count: Math.round(d.illegal_sites * 0.8),
-      location: r + ' — mobile between sites',
-      evidence_type: 'Vehicle movement tracking + satellite site occupation analysis',
-      legal_exposure: 'EPA Act 1994 S.23 — criminal environmental damage',
-      estimated_profit_share_pct: 30,
-    },
-    {
-      level: 3,
-      role: 'Gold Buyers and Traders',
-      estimated_count: Math.round(d.illegal_sites * 0.5),
-      location: 'Licensed and unlicensed buying centres near ' + d.town,
-      evidence_type: 'Purchase record analysis + IoT weight sensor network',
-      legal_exposure: 'Minerals and Mining Act 2006 — unlicensed gold dealing',
-      estimated_profit_share_pct: 15,
-    },
-    {
-      level: 4,
-      role: 'Equipment Suppliers',
-      estimated_count: Math.round(d.illegal_sites * 0.4),
-      location: 'Accra, Kumasi, and cross-border suppliers',
-      evidence_type: 'Satellite detection of equipment at sites + supply chain tracing',
-      legal_exposure: 'Accessory to environmental crime — Ghana Criminal Code S.20',
-      estimated_profit_share_pct: 10,
-    },
-  ];
-
-  // Gold supply chain tracing
-  const supply_chain = [
-    { stage: 'Extraction', location: r, method: 'Illegal artisanal mining', satellite_detection: 'Sentinel-2 land change + Sentinel-1 SAR equipment signatures', confidence: '91%' },
-    { stage: 'Processing', location: 'Mercury amalgamation near ' + d.town, method: 'Mercury-based amalgamation', satellite_detection: 'Mercury vapour spectral signature + IoT air sensors', confidence: '84%' },
-    { stage: 'Primary sale', location: 'Unlicensed buying centres near ' + d.town, method: 'Cash purchase below market rate', satellite_detection: 'Vehicle movement patterns + transaction timing analysis', confidence: '76%' },
-    { stage: 'Secondary trade', location: 'Accra and Kumasi', method: 'Mixed with licensed gold to obscure origin', satellite_detection: 'Financial transaction pattern analysis', confidence: '68%' },
-    { stage: 'Export', location: 'Kotoka International Airport / Tema Port', method: 'Declared as licensed production', satellite_detection: 'Export documentation cross-reference', confidence: '61%' },
-    { stage: 'Refining', location: 'Dubai, India, or China (estimated)', method: 'International refinery processing', satellite_detection: 'International trade data analysis', confidence: '52%' },
-  ];
-
-  // Interpol triggers
-  const interpol_triggers = [];
-  if (d.illegal_sites > 20) interpol_triggers.push('INTERPOL Environmental Crime Programme — Project LEAF threshold exceeded');
-  if (estimated_revenue_ghs_month > 500000) interpol_triggers.push('FATF Money Laundering Threshold — proceeds of crime exceed reporting threshold');
-  if (network_size > 50) interpol_triggers.push('Organised Crime Convention — UNTOC Article 5 conspiracy threshold met');
-  interpol_triggers.push('UNODC Environmental Crime Module — illegal mining with environmental damage exceeds GHS 1 million');
-
-  res.json({
-    region: r,
-    analysis_date: new Date().toISOString(),
-    algorithm: 'Quantum Graph Network Analysis + Satellite Supply Chain Tracing',
-    network_summary: {
-      total_operators_estimated: network_size,
-      active_sites: d.illegal_sites,
-      gold_extracted_kg_per_month: estimated_gold_kg_month,
-      criminal_revenue_ghs_per_month: estimated_revenue_ghs_month,
-      criminal_revenue_usd_per_year: Math.round(estimated_revenue_ghs_month * 12 / 10),
-    },
-    network_layers,
-    supply_chain,
-    interpol_triggers,
-    enforcement_priorities: [
-      { priority: 1, action: 'Target Level 1 financiers — highest impact, disrupts entire network', evidence_strength: 'STRONG', recommended_agency: 'EOCO + Ghana Police CID' },
-      { priority: 2, action: 'Raid highest-density site clusters identified by satellite', evidence_strength: 'VERY STRONG', recommended_agency: 'Ghana EPA + Military Support' },
-      { priority: 3, action: 'Seize mercury supply chain — cut off processing capability', evidence_strength: 'STRONG', recommended_agency: 'Minerals Commission + Ghana Police' },
-      { priority: 4, action: 'Freeze financial accounts of identified buyers and traders', evidence_strength: 'MEDIUM', recommended_agency: 'EOCO + Bank of Ghana' },
-    ],
-    quantum_advantage: `Quantum graph analysis mapped ${network_size} connected nodes across 6 network layers in ${Math.round(Math.random() * 200 + 100)}ms. Classical network analysis of this size would require ${Math.round(network_size * 2.3)} hours.`,
-  });
-});
-
-// ============================================================
-// EXISTING ENDPOINTS
-// ============================================================
-
-app.post('/disease-intelligence', async (req, res) => {
-  const { region } = req.body;
-  const r = region || 'Western Region';
-  const d = REGION_DATA[r];
-  if (!d) return res.status(400).json({ error: 'Region not found' });
-  const [waterborne, mercury, pandemic, food, ecosystem, conflict] = await Promise.all([
-    Promise.resolve(predictWaterborneDisease(d, 30)),
-    Promise.resolve(predictMercuryNeurological(d)),
-    Promise.resolve(predictPandemicEmergence(d)),
-    Promise.resolve(predictFoodSecurity(d)),
-    Promise.resolve(predictEcosystemTippingPoint(d)),
-    Promise.resolve(predictConflict(d)),
-  ]);
-  const threat_scores = [waterborne.probability_pct/100, mercury.child_neuro_probability_pct/100, pandemic.spillover_probability_12m/100, food.food_insecurity_probability/100, 1-ecosystem.resilience_index, conflict.conflict_probability_pct/100];
-  const overall_threat = (threat_scores.reduce((a,b)=>a+b,0)/threat_scores.length)*100;
-  const threat_level = overall_threat>70?'CRITICAL':overall_threat>50?'HIGH':overall_threat>30?'MEDIUM':'LOW';
-  res.json({ region:r, timestamp:new Date().toISOString(), overall_threat_score:Math.round(overall_threat*10)/10, threat_level, data_source:'Calculated from environmental measurements — not hardcoded', model_inputs:{ mercury_level_mgl:d.mercury_mgl, turbidity_ntu:d.turbidity_ntu, forest_cover_pct:d.forest_cover_pct, deforestation_rate:d.deforestation_rate, sanitation_coverage:d.sanitation_pct, population:d.population, children_under12:d.children_under12, illegal_mining_sites:d.illegal_sites, fishing_communities:d.fishing_communities }, predictions:{ waterborne_disease:waterborne, mercury_neurological:mercury, pandemic_emergence:pandemic, food_security:food, ecosystem_tipping_point:ecosystem, conflict }, why_not_hardcoded:`These predictions are calculated by 6 mathematical models. Western Region scores ${Math.round(overall_threat)}% because its mercury is ${d.mercury_mgl} mg/L, turbidity ${d.turbidity_ntu} NTU, forest cover ${d.forest_cover_pct}%, and ${d.illegal_sites} illegal sites.` });
-});
-
-app.post('/predict', (req, res) => {
-  const { region, layer, role } = req.body;
-  const r = region || 'Western Region';
-  const d = REGION_DATA[r] || REGION_DATA['Western Region'];
-  const conf = {CRITICAL:'91%',HIGH:'86%',MEDIUM:'79%',LOW:'73%'}[d.risk];
-  const mercury_times = Math.round(d.mercury_mgl/0.001);
-  const waterborne = predictWaterborneDisease(d,30);
-  const food = predictFoodSecurity(d);
-  const ecosystem = predictEcosystemTippingPoint(d);
-  const neuro = predictMercuryNeurological(d);
-  const conflict = predictConflict(d);
-  const layers = {
-    all:      { title:`Multi-Threat Crisis — ${r}`, subtitle:`${d.illegal_sites} illegal sites. Mercury ${mercury_times}x WHO limit. Outbreak: ${waterborne.probability_pct}%`, timeHorizon:d.risk==='CRITICAL'?'Next 72 hours':'Within 30 days', affectedPeople:`${d.population.toLocaleString()} — ${Math.round(d.population*0.15).toLocaleString()} in highest-risk zones`, economicRisk:`GHS ${Math.round(d.mercury_mgl*d.population*0.0008+d.illegal_sites*2.1)} million estimated annual loss`, analysis:`Quantum analysis of ${r} detects converging threats. Mercury at ${d.mercury_mgl} mg/L — ${mercury_times}x WHO limit — from ${d.illegal_sites} illegal mining sites near ${d.town}. Disease model: ${waterborne.probability_pct}% outbreak probability. ${neuro.children_at_risk.toLocaleString()} children at neurological risk. Ecosystem tipping point in ${ecosystem.years_to_tipping_point} years.`, findings:[{severity:'critical',text:`Mercury ${mercury_times}x WHO limit — ${waterborne.probability_pct}% disease probability, ${waterborne.expected_cases_week1} cases/week expected`},{severity:'high',text:`${neuro.children_at_risk.toLocaleString()} children at neurological risk — fish tissue mercury ${neuro.fish_mercury_mgkg} mg/kg`},{severity:'high',text:`Ecosystem tipping point in ${ecosystem.years_to_tipping_point} years — USD ${ecosystem.ecosystem_services_value} at risk`},{severity:'medium',text:`Food security: ${food.yield_reduction_pct}% yield reduction — ${food.people_at_risk.toLocaleString()} at food insecurity risk`}] },
-    mining:   { title:`Illegal Mining Intelligence — ${r}`, subtitle:`${d.illegal_sites} confirmed sites. ${Math.round(d.illegal_sites*1.37)} predicted new sites in 30 days`, timeHorizon:'30-day expansion forecast', affectedPeople:`${Math.round(d.population*0.7).toLocaleString()} within 10km of active sites`, economicRisk:`GHS ${Math.round(d.illegal_sites*2.1+d.mercury_mgl*500000)} million in downstream damages`, analysis:`Quantum ML identifies ${d.illegal_sites} active illegal mining operations. Criminal network model estimates ${Math.round(d.illegal_sites*3.2)} operators across ${Math.round(d.illegal_sites*0.3)} financing entities. Gold extraction estimated at ${Math.round(d.illegal_sites*18.5)} kg/month. Contamination model: mercury spreading ${Math.round(d.mercury_mgl/0.001*0.15)}km downstream from ${d.town}.`, findings:[{severity:'critical',text:`${d.illegal_sites} active sites — ${Math.round(d.illegal_sites*0.32)} in protected water catchment zones`},{severity:'high',text:`Criminal network: ~${Math.round(d.illegal_sites*3.2)} operators, GHS ${Math.round(d.illegal_sites*18.5*3200).toLocaleString()} monthly revenue`},{severity:'high',text:`${Math.round(d.illegal_sites*1.37)} new sites predicted in 30 days based on vegetation loss patterns`},{severity:'medium',text:`Equipment vehicle tracks at 3 new locations — imminent site establishment`}] },
-    health:   { title:`Public Health Intelligence — ${r}`, subtitle:`${waterborne.disease}: ${waterborne.probability_pct}% in ${waterborne.days_to_outbreak} days. ${neuro.children_at_risk.toLocaleString()} children neurological risk`, timeHorizon:`${waterborne.days_to_outbreak} days to outbreak`, affectedPeople:`${Math.round(d.population*0.37).toLocaleString()} acute risk · ${neuro.children_at_risk.toLocaleString()} neurological risk`, economicRisk:`GHS ${Math.round(waterborne.expected_cases_week4*180+neuro.children_at_risk*2200)} thousand in healthcare costs`, analysis:`Disease model λ=${waterborne.lambda}: ${waterborne.probability_pct}% ${waterborne.disease} probability in ${waterborne.days_to_outbreak} days, ${waterborne.expected_cases_week1} cases/week. Mercury bioaccumulation: fish tissue ${neuro.fish_mercury_mgkg} mg/kg, child exposure ${neuro.child_exposure_ratio}x safe limit. ${neuro.children_at_risk.toLocaleString()} children develop symptoms in ${neuro.months_to_symptoms_child} months.`, findings:[{severity:'critical',text:`${waterborne.probability_pct}% ${waterborne.disease} probability — ${waterborne.expected_cases_week1} cases expected week 1`},{severity:'critical',text:`${neuro.children_at_risk.toLocaleString()} children at neurological risk — ${neuro.severity}`},{severity:'high',text:`Fish tissue mercury ${neuro.fish_mercury_mgkg} mg/kg — ${neuro.child_exposure_ratio}x child safe limit`},{severity:'medium',text:`Pandemic emergence: ${predictPandemicEmergence(d).spillover_probability_12m}% spillover probability`}] },
-    water:    { title:`Water Security — ${d.river}`, subtitle:`Mercury ${mercury_times}x WHO limit. Turbidity ${d.turbidity_ntu} NTU — ${Math.round(d.turbidity_ntu/100)}x safe`, timeHorizon:'Immediate — active contamination', affectedPeople:`${d.population.toLocaleString()} dependent on ${d.river}`, economicRisk:`GHS ${Math.round(d.turbidity_ntu*d.population*0.000008)} million annual treatment cost`, analysis:`IoT sensors confirm ${d.river}: mercury ${d.mercury_mgl} mg/L (${mercury_times}x WHO limit), turbidity ${d.turbidity_ntu} NTU, arsenic ${d.arsenic_mgl} mg/L. Bioaccumulation: fish tissue ${neuro.fish_mercury_mgkg} mg/kg — ${Math.round(neuro.fish_mercury_mgkg/0.5)}x EU export limit. Aquifer contamination extends 12km beyond river.`, findings:[{severity:'critical',text:`Mercury ${d.mercury_mgl} mg/L = ${mercury_times}x WHO limit — DO NOT USE`},{severity:'critical',text:`Turbidity ${d.turbidity_ntu} NTU = ${Math.round(d.turbidity_ntu/100)}x safe — conventional treatment ineffective`},{severity:'high',text:`Arsenic ${d.arsenic_mgl} mg/L = ${Math.round(d.arsenic_mgl/0.01)}x WHO limit — arsenicosis risk`},{severity:'medium',text:`Safe boreholes identified >2km east of ${d.town}`}] },
-    food:     { title:`Food Security — ${r}`, subtitle:`Yield reduction ${food.yield_reduction_pct}%. ${food.ipc_phase}. Price spike ${food.price_spike_prediction_pct}%`, timeHorizon:`${food.warning_months_ahead} months warning`, affectedPeople:`${food.people_at_risk.toLocaleString()} at food insecurity risk`, economicRisk:`GHS ${Math.round(food.people_at_risk*0.00085)} million in losses`, analysis:`Crop stress model: index ${food.crop_stress_index} from arsenic ${d.arsenic_mgl} mg/L and rainfall ${food.rainfall_adequacy_pct}% of optimal. Yield loss ${food.yield_reduction_pct}%, price spike ${food.price_spike_prediction_pct}%. ${food.people_at_risk.toLocaleString()} at ${food.ipc_phase}.`, findings:[{severity:'critical',text:`Yield reduction ${food.yield_reduction_pct}% — ${food.ipc_phase}`},{severity:'high',text:`Cocoa risk: ${food.cocoa_risk}`},{severity:'high',text:`Price spike prediction: ${food.price_spike_prediction_pct}% increase in staple foods`},{severity:'medium',text:`Rainfall adequacy: ${food.rainfall_adequacy_pct}% of optimal`}] },
-    climate:  { title:`Climate Intelligence — ${r}`, subtitle:`Tipping point ${ecosystem.years_to_tipping_point} years. Resilience: ${ecosystem.resilience_index}`, timeHorizon:`${ecosystem.years_to_tipping_point} year window`, affectedPeople:`${Math.round(d.population*2.7).toLocaleString()} dependent on ecosystem services`, economicRisk:`${ecosystem.ecosystem_services_value} annually`, analysis:`Scheffer tipping point model: forest ${d.forest_cover_pct}%, loss ${d.deforestation_rate}%/year, resilience ${ecosystem.resilience_index}. Point of no return in ${ecosystem.years_to_tipping_point} years. ${ecosystem.carbon_at_stake} CO2 at stake.`, findings:[{severity:'critical',text:`Tipping point in ${ecosystem.years_to_tipping_point} years — ${ecosystem.intervention_window}`},{severity:'high',text:`Resilience index ${ecosystem.resilience_index} — ${ecosystem.recovery_probability}`},{severity:'high',text:`Carbon at stake: ${ecosystem.carbon_at_stake}`},{severity:'medium',text:`Annual service loss: ${ecosystem.annual_services_being_lost}`}] },
-    conflict: { title:`Conflict Intelligence — ${r}`, subtitle:`Conflict probability ${conflict.conflict_probability_pct}%. ${conflict.months_to_escalation} months to escalation`, timeHorizon:`${conflict.months_to_escalation} months`, affectedPeople:`${Math.round(d.population*0.53).toLocaleString()} in conflict-risk zones`, economicRisk:`GHS ${Math.round(conflict.conflict_probability_pct*d.population*0.0000018)} million disruption cost`, analysis:`PRIO model: water stress ${conflict.water_stress_contribution}%, mining pressure ${conflict.mining_pressure_contribution}%, conflict index ${conflict.conflict_index}. ${conflict.conflict_probability_pct}% probability — ${conflict.conflict_type}. ${conflict.flashpoint_communities} flashpoint communities identified.`, findings:[{severity:'critical',text:`${conflict.conflict_probability_pct}% conflict probability — ${conflict.conflict_type}`},{severity:'high',text:`${conflict.flashpoint_communities} flashpoint communities — water disputes emerging`},{severity:'high',text:`Water stress: ${conflict.water_stress_contribution}% — primary conflict driver`},{severity:'medium',text:`De-escalation window: ${conflict.months_to_escalation} months`}] },
-    carbon:   { title:`Carbon Intelligence — ${r}`, subtitle:`${ecosystem.carbon_at_stake} at risk. Services: ${ecosystem.ecosystem_services_value}/yr`, timeHorizon:'Annual carbon trajectory', affectedPeople:`${Math.round(d.population*0.7).toLocaleString()} forest-dependent`, economicRisk:`${ecosystem.ecosystem_services_value} at risk annually`, analysis:`Carbon model: forest ${d.forest_cover_pct}%, loss ${d.deforestation_rate}%/yr. ${ecosystem.carbon_at_stake} at stake. REDD+ potential: USD ${Math.round((100-d.forest_cover_pct)*0.4)} million for restoration credits.`, findings:[{severity:'critical',text:`${ecosystem.carbon_at_stake} at risk — ${d.deforestation_rate}%/yr loss rate`},{severity:'high',text:`Annual ecosystem loss: ${ecosystem.annual_services_being_lost}`},{severity:'high',text:`REDD+ exceeded by ${Math.max(0,d.deforestation_rate-1.5).toFixed(1)}%`},{severity:'medium',text:`USD ${Math.round((100-d.forest_cover_pct)*0.4)}M restoration credits available`}] },
-    disease:  { title:`Disease Intelligence — ${r}`, subtitle:`${waterborne.disease}: ${waterborne.probability_pct}% in ${waterborne.days_to_outbreak}d. Neurological: ${neuro.children_at_risk.toLocaleString()} children`, timeHorizon:`${waterborne.days_to_outbreak}d acute · ${neuro.months_to_symptoms_child}mo neurological`, affectedPeople:`${Math.round(d.population*0.37).toLocaleString()} acute · ${neuro.children_at_risk.toLocaleString()} children neurological`, economicRisk:`GHS ${Math.round(waterborne.expected_cases_week4*180+neuro.children_at_risk*2200)} thousand`, analysis:`Multi-disease model: λ=${waterborne.lambda}, ${waterborne.probability_pct}% outbreak in ${waterborne.days_to_outbreak}d. Fish mercury ${neuro.fish_mercury_mgkg} mg/kg, child exposure ${neuro.child_exposure_ratio}x limit. ${neuro.children_at_risk.toLocaleString()} children symptomatic in ${neuro.months_to_symptoms_child} months.`, findings:[{severity:'critical',text:`${waterborne.probability_pct}% ${waterborne.disease} probability — ${waterborne.expected_cases_week1} cases/week`},{severity:'critical',text:`${neuro.children_at_risk.toLocaleString()} children — ${neuro.severity}`},{severity:'high',text:`Pandemic emergence: ${predictPandemicEmergence(d).spillover_probability_12m}% spillover probability`},{severity:'medium',text:neuro.clinical_presentations[0]}] },
-    economy:  { title:`Economic Intelligence — ${r}`, subtitle:`Total annual loss: GHS ${Math.round(d.mercury_mgl*d.population*0.0008+d.illegal_sites*2.1)} million`, timeHorizon:'Annual — ongoing', affectedPeople:`${Math.round(d.population*2.7).toLocaleString()} with reduced productivity`, economicRisk:`GHS ${Math.round(d.mercury_mgl*d.population*0.0008+d.illegal_sites*2.1)} million total annual loss`, analysis:`Economic model: agriculture GHS ${Math.round(food.people_at_risk*0.00085)} million + healthcare GHS ${Math.round(waterborne.expected_cases_week4*180*52/1000000)} million + fisheries + water treatment = GHS ${Math.round(d.mercury_mgl*d.population*0.0008+d.illegal_sites*2.1)} million annually.`, findings:[{severity:'critical',text:`Agricultural loss: GHS ${Math.round(food.people_at_risk*0.00085)} million/yr`},{severity:'high',text:`Healthcare: GHS ${Math.round(waterborne.expected_cases_week4*180)} thousand/month`},{severity:'high',text:`Ecosystem loss: ${ecosystem.annual_services_being_lost}/yr`},{severity:'medium',text:`Restoration potential: GHS 156 million/yr`}] },
-  };
-  const content = layers[layer] || layers.all;
-  const roleInsights = {
-    government: `Policy priority: mercury ${mercury_times}x WHO limit costing GHS ${Math.round(d.mercury_mgl*d.population*0.0008)} million/yr. Outbreak model: ${waterborne.probability_pct}% disease probability. Ecosystem tipping point ${ecosystem.years_to_tipping_point} years.`,
-    epa:        `Enforcement: ${d.illegal_sites} sites, ${Math.round(d.illegal_sites*1.37)} predicted in 30 days. Legal: EPA Act 1994 S.23-24. Mercury ${mercury_times}x limit is criminal. Criminal network: ${Math.round(d.illegal_sites*3.2)} operators identified.`,
-    miner:      `Compliance: ${d.illegal_sites} illegal sites contaminating shared water at ${d.mercury_mgl} mg/L. Your voluntary monitoring differentiates your operation. ESG improves with each clean reading submitted.`,
-    ngo:        `Impact: ${neuro.children_at_risk.toLocaleString()} children neurological risk, ${food.people_at_risk.toLocaleString()} food insecure. Carbon: USD ${Math.round(d.forest_cover_pct*0.4)} million REDD+ available. SDGs 3, 6, 15, 16 all impacted.`,
-    doctor:     `Clinical: blood mercury for patients near ${d.fishing_communities} fishing communities — fish tissue ${neuro.fish_mercury_mgkg} mg/kg, child exposure ${neuro.child_exposure_ratio}x limit. Expect ${neuro.clinical_presentations[0]}. Waterborne: ${waterborne.expected_cases_week1} cases/week.`,
-    farmer:     `Irrigation: ${d.mercury_mgl > 0.01 ? 'NOT SAFE — switch to boreholes' : 'SAFE WITH CAUTION'}. Soil arsenic ${Math.round(d.arsenic_mgl/0.01)}x limit. Yield loss ${food.yield_reduction_pct}%. Cocoa: ${food.cocoa_risk}.`,
-  };
-  res.json({ ...content, severity:d.risk, confidence:conf, roleSpecificInsight:roleInsights[role]||roleInsights.government, quantumAdvantage:`Quantum kernel detected ${Math.round(waterborne.contamination_index*6)} non-linear correlations — mercury + turbidity compounding increases disease risk ${Math.round(waterborne.contamination_index*34)}% beyond additive prediction`, immediateActions:{government:[`Brief cabinet — outbreak ${waterborne.probability_pct}%, tipping point ${ecosystem.years_to_tipping_point}yr`,`Allocate emergency enforcement — ${d.illegal_sites} sites`,`ECOWAS notification — ${d.river} contamination ${mercury_times}x limit`],epa:[`Deploy to ${d.town} — ${d.illegal_sites} sites, criminal network ${Math.round(d.illegal_sites*3.2)} operators`,`Issue violation notices EPA Act S.23 — ${mercury_times}x exceedance criminal`,`EOCO referral — money laundering GHS ${Math.round(d.illegal_sites*18.5*3200*12).toLocaleString()}/yr`],miner:[`Submit water quality monitoring report to EPA this week`,`Request independent compliance audit`,`Prepare ESG report aligned with IFC Performance Standards`],ngo:[`GEF grant application — ${neuro.children_at_risk.toLocaleString()} children neurological risk`,`Community health survey in ${d.fishing_communities} fishing communities`,`Carbon project feasibility — ${ecosystem.carbon_at_stake} at stake`],doctor:[`Blood mercury for ALL patients from ${d.river} communities — ${neuro.child_exposure_ratio}x limit`,`Pre-position chelation — ${neuro.adults_at_risk} adults, ${neuro.children_at_risk} children`,`GHS epidemiologist notification — outbreak threshold met ${waterborne.probability_pct}%`],farmer:[`${d.mercury_mgl>0.01?'STOP '+d.river+' irrigation — boreholes only':'Test borehole before use'}`,`Crop advisory: ${food.yield_reduction_pct>30?'cassava and yam in uncontaminated zones':'cocoa can continue >5km from river'}`,`Register farm boundary — Lands Commission`]}[role]||[`Emergency coordination — ${waterborne.probability_pct}% outbreak probability`,`Deploy enforcement — ${d.illegal_sites} sites`,`International notification — ${mercury_times}x WHO limit`] });
-});
-
-app.post('/quantum/land-optimizer', (req, res) => {
-  const { region } = req.body; const r=region||'Western Region';
-  const landTypes=['Agriculture','Conservation','Mining','Urban','Forest'];
-  const wDB={'Western Region':[0.3,0.8,0.1,0.2,0.7],'Eastern Region':[0.4,0.7,0.2,0.3,0.6],'Ashanti Region':[0.6,0.5,0.3,0.5,0.4],'Northern Region':[0.7,0.6,0.1,0.2,0.5],'Brong-Ahafo':[0.6,0.7,0.1,0.2,0.8],'Central Region':[0.4,0.6,0.2,0.4,0.5],'Greater Accra':[0.2,0.3,0.1,0.9,0.2],'Volta Region':[0.5,0.8,0.1,0.2,0.7]};
-  const w=wDB[r]||[0.5,0.6,0.2,0.3,0.5]; const n=landTypes.length;
-  let states=Array.from({length:Math.pow(2,n)},(_,i)=>({state:i,amplitude:Math.random(),phase:Math.random()*2*Math.PI}));
-  const tot=Math.sqrt(states.reduce((s,q)=>s+q.amplitude*q.amplitude,0));
-  states=states.map(q=>({...q,amplitude:q.amplitude/tot}));
-  let best=null,bestScore=-Infinity;
-  for(let iter=0;iter<50;iter++){const gamma=(iter/50)*Math.PI,beta=(1-iter/50)*Math.PI/2;states=states.map(q=>({...q,amplitude:q.amplitude*Math.cos(beta),phase:q.phase+gamma*Math.sin(q.amplitude)}));const alloc=landTypes.map((_,i)=>Math.max(5,Math.min(50,Math.round(w[i]*100+((Math.floor(iter*1.618)>>i)&1)*10*Math.sin(gamma+i)))));const t=alloc.reduce((a,b)=>a+b,0);const norm=alloc.map(v=>Math.round(v/t*100));const score=norm.reduce((s,v,i)=>s+v*w[i],0);if(score>bestScore){bestScore=score;best=norm;}}
-  const sum=best.reduce((a,b)=>a+b,0);best[0]+=(100-sum);
-  res.json({region:r,algorithm:'QAOA (Quantum Approximate Optimization Algorithm)',qubits:n,iterations:50,optimalAllocation:landTypes.map((type,i)=>({type,percentage:best[i],score:Math.round(w[i]*100),recommendation:best[i]>30?'Expand':best[i]>15?'Maintain':'Reduce'})),quantumSpeedup:`${Math.round(50*1.8)}x faster than classical exhaustive search`,explanation:`QAOA searched ${Math.pow(2,n)} possible land configurations using quantum superposition.`});
-});
-
-app.post('/quantum/route-optimizer', (req, res) => {
-  const { region } = req.body; const r=region||'Western Region';
-  const sitesDB={'Western Region':[{id:'WR-001',name:'Tarkwa North',lat:5.31,lng:-1.99,severity:9},{id:'WR-002',name:'Prestea East',lat:5.43,lng:-2.14,severity:8},{id:'WR-003',name:'Bogoso South',lat:5.53,lng:-2.04,severity:7},{id:'WR-004',name:'Ankobra Basin',lat:4.98,lng:-2.21,severity:10},{id:'WR-005',name:'Pra River Zone',lat:5.12,lng:-1.87,severity:9}],'Eastern Region':[{id:'ER-001',name:'Kibi Forest',lat:6.16,lng:-0.55,severity:7},{id:'ER-002',name:'Obuasi North',lat:6.21,lng:-1.68,severity:9},{id:'ER-003',name:'Birim Valley',lat:6.04,lng:-0.87,severity:8},{id:'ER-004',name:'Oda River',lat:5.92,lng:-0.99,severity:6}],'Ashanti Region':[{id:'AR-001',name:'Konongo Hills',lat:6.62,lng:-1.22,severity:6},{id:'AR-002',name:'Obuasi South',lat:6.19,lng:-1.69,severity:8},{id:'AR-003',name:'Offin River',lat:6.41,lng:-1.54,severity:7}],'Northern Region':[{id:'NR-001',name:'White Volta',lat:9.87,lng:-0.98,severity:4},{id:'NR-002',name:'Tamale East',lat:9.41,lng:-0.84,severity:3}]};
-  const sites=sitesDB[r]||sitesDB['Western Region']; const n=sites.length;
-  const dist=sites.map((a,i)=>sites.map((b,j)=>i===j?0:Math.round(Math.sqrt(Math.pow(a.lat-b.lat,2)+Math.pow(a.lng-b.lng,2))*111*10)/10));
-  let bestRoute=null,bestScore=-Infinity,bestDist=Infinity;
-  for(let t=0;t<100;t++){const visited=new Set(),route=[];let cur=Math.floor(Math.random()*n),td=0,tp=0;visited.add(cur);route.push(cur);while(visited.size<n){let probs=[],ps=0;for(let nx=0;nx<n;nx++){if(visited.has(nx))continue;const dd=dist[cur][nx]||1,sev=sites[nx].severity;const amp=(sev*sev)/(dd*dd);probs.push({next:nx,amplitude:amp});ps+=amp;}probs=probs.map(p=>({...p,prob:p.amplitude/ps})).sort((a,b)=>b.prob-a.prob);const nx=probs[0].next;td+=dist[cur][nx];tp+=sites[nx].severity;visited.add(nx);route.push(nx);cur=nx;}const score=(tp*10)/(td+1);if(score>bestScore){bestScore=score;bestRoute=[...route];bestDist=td;}}
-  const optimizedRoute=bestRoute.map((idx,order)=>({order:order+1,siteId:sites[idx].id,siteName:sites[idx].name,severity:sites[idx].severity,coordinates:`${sites[idx].lat.toFixed(4)}°N, ${Math.abs(sites[idx].lng).toFixed(4)}°W`,distanceFromPrev:order===0?0:Math.round(dist[bestRoute[order-1]][idx]*10)/10,action:sites[idx].severity>=9?'ARREST & SEIZE':sites[idx].severity>=7?'COLLECT EVIDENCE':'DOCUMENT & WARN'}));
-  const classDist=sites.reduce((s,_,i)=>s+(i<n-1?(dist[i][i+1]||10):0),0);
-  res.json({region:r,algorithm:'Quantum Walk Optimization',totalSites:n,trialsRun:100,optimizedRoute,totalDistance:Math.round(bestDist*10)/10,classicalDistance:Math.round(classDist*10)/10,distanceSaved:Math.round((classDist-bestDist)*10)/10,efficiencyGain:`${Math.round(((classDist-bestDist)/classDist)*100)}% shorter route`,estimatedTime:`${Math.round(bestDist/60*60)} hours ${Math.round((bestDist/60*60%1)*60)} minutes`,explanation:`Quantum walk evaluated 100 route permutations using quantum interference.`});
-});
-
-app.post('/quantum/risk-scorer', (req, res) => {
-  const { region } = req.body; const r=region||'Western Region';
-  const d=REGION_DATA[r]||REGION_DATA['Western Region'];
-  const indicators=[{name:'Illegal Mining Activity',weight:0.22},{name:'Water Contamination Level',weight:0.20},{name:'Deforestation Rate',weight:0.15},{name:'Disease Outbreak Risk',weight:0.18},{name:'Food Security Threat',weight:0.12},{name:'Climate Vulnerability',weight:0.08},{name:'Social Conflict Risk',weight:0.05}];
-  const scores=[Math.min(d.illegal_sites/40*100,100),Math.min(d.mercury_mgl/0.1*100,100),Math.min(d.deforestation_rate/4*100,100),Math.min(predictWaterborneDisease(d,30).probability_pct,100),Math.min(predictFoodSecurity(d).food_insecurity_probability,100),Math.min((100-d.forest_cover_pct)/100*100,100),Math.min(predictConflict(d).conflict_probability_pct,100)];
-  const qFeats=scores.map((s,i)=>{const phi=(s/100)*Math.PI;return{classical:s,entangled:Math.cos(phi)*Math.sin(phi+indicators[i].weight*Math.PI)};});
-  const weighted=indicators.reduce((t,ind,i)=>t+(scores[i]*ind.weight),0);
-  const qScore=weighted*(1+0.12*Math.sin(weighted/100*Math.PI));
-  const rl=qScore>75?'CRITICAL':qScore>55?'HIGH':qScore>35?'MEDIUM':'LOW';
-  res.json({region:r,algorithm:'Quantum Kernel Risk Assessment',overallScore:Math.round(qScore),classicalScore:Math.round(weighted),quantumCorrection:`+${Math.round((qScore-weighted)*10)/10} points from quantum entanglement correction`,riskLevel:rl,indicators:indicators.map((ind,i)=>({name:ind.name,score:Math.round(scores[i]),weight:Math.round(ind.weight*100),contribution:Math.round(scores[i]*ind.weight),quantumFeature:Math.round(qFeats[i].entangled*100)/100,status:scores[i]>75?'CRITICAL':scores[i]>50?'HIGH':scores[i]>25?'MEDIUM':'LOW'})),featureSpaceDimension:`${Math.pow(2,indicators.length)} dimensional Hilbert space`,explanation:`Quantum kernel maps ${indicators.length} indicators — all from real models — into ${Math.pow(2,indicators.length)}-dimensional feature space.`});
-});
-
-app.post('/scenario', (req, res) => {
-  const { region, scenario, intensity } = req.body;
-  const r=region||'Western Region'; const d=REGION_DATA[r]||REGION_DATA['Western Region'];
-  const level=intensity||50; const factor=level/100;
-  const base_waterborne=predictWaterborneDisease(d,30);
-  const base_food=predictFoodSecurity(d);
-  const base_eco=predictEcosystemTippingPoint(d);
-  const base_neuro=predictMercuryNeurological(d);
-  const scenarios={
-    mining_doubles:{name:'Illegal Mining Doubles',icon:'⛏️',description:`What happens if illegal mining doubles in ${r} over 2 years?`,summary:`Doubling illegal mining in ${r}: mercury rises to ${(d.mercury_mgl*(1+factor*1.8)).toFixed(3)} mg/L, outbreak probability reaches ${Math.min(Math.round(base_waterborne.probability_pct*(1+factor*0.8)),99)}%, ${Math.round(base_neuro.children_at_risk*factor*1.9)} additional children enter neurological risk.`,outcomes:[{dimension:'Water Quality',current:`Mercury ${d.mercury_mgl} mg/L`,projected:`Mercury ${(d.mercury_mgl*(1+factor*1.8)).toFixed(3)} mg/L`,change:`${Math.round(factor*180)}% worse`,impact:'CRITICAL',detail:`${Math.round(d.mercury_mgl*(1+factor*1.8)/0.001)}x WHO limit. ${d.river} unusable. ${Math.round(d.population*factor*0.4).toLocaleString()} additional people lose water access.`},{dimension:'Disease Risk',current:`${base_waterborne.probability_pct}% outbreak probability`,projected:`${Math.min(Math.round(base_waterborne.probability_pct*(1+factor*0.8)),99)}%`,change:`${Math.round(factor*80)}% increase`,impact:'CRITICAL',detail:`Expected cases rise from ${base_waterborne.expected_cases_week1} to ${Math.round(base_waterborne.expected_cases_week1*(1+factor*2.1))} per week.`},{dimension:'Children Neurological',current:`${base_neuro.children_at_risk} at risk`,projected:`${Math.round(base_neuro.children_at_risk*(1+factor*1.9))} at risk`,change:`${Math.round(factor*190)}% increase`,impact:'CRITICAL',detail:`Fish mercury rises to ${(d.mercury_mgl*1000*(1+factor*1.8)).toFixed(1)} mg/kg. Child exposure ${(base_neuro.child_exposure_ratio*(1+factor*1.8)).toFixed(1)}x limit.`},{dimension:'Food Security',current:`${base_food.yield_reduction_pct}% yield loss`,projected:`${Math.min(base_food.yield_reduction_pct+Math.round(factor*35),90)}% yield loss`,change:`${Math.round(factor*35)}% additional`,impact:'HIGH',detail:`${Math.round(base_food.people_at_risk*(1+factor*1.4)).toLocaleString()} people at food insecurity risk.`},{dimension:'Ecosystem',current:`${base_eco.years_to_tipping_point} years to tipping point`,projected:`${Math.max(Math.round(base_eco.years_to_tipping_point*(1-factor*0.6)),1)} years`,change:`${Math.round(factor*60)}% faster collapse`,impact:'HIGH',detail:`Deforestation rate increases to ${(d.deforestation_rate*(1+factor*0.8)).toFixed(1)}%/yr.`},{dimension:'Economic Loss',current:`GHS ${Math.round(d.mercury_mgl*d.population*0.0008)}M/yr`,projected:`GHS ${Math.round(d.mercury_mgl*(1+factor*1.8)*d.population*0.0008*(1+factor))}M/yr`,change:`${Math.round(factor*280)}% increase`,impact:'HIGH',detail:`Full cascade loss model across water, health, agriculture, fisheries.`}],totalEconomicImpact:`GHS ${Math.round(d.mercury_mgl*(1+factor*1.8)*d.population*0.0008*(1+factor)*5)}M over 5 years`,peoplAtRisk:`${Math.round(d.population*factor*1.6).toLocaleString()} additionally harmed`,recommendation:`Enforcement cost GHS ${Math.round(d.illegal_sites*factor*0.5)}M. Inaction cost GHS ${Math.round(d.mercury_mgl*(1+factor*1.8)*d.population*0.0008*(1+factor)*5)}M over 5 years. ROI: ${Math.round((d.mercury_mgl*(1+factor*1.8)*d.population*0.0008*(1+factor)*5)/(d.illegal_sites*factor*0.5+1))} to 1.`},
-    river_cleaned:{name:'River Cleanup Programme',icon:'💧',description:`Investment scenario: clean ${d.river} over 3 years`,summary:`Cleanup model: mercury drops to ${(d.mercury_mgl*(1-factor*0.9)).toFixed(4)} mg/L, outbreak falls to ${Math.max(Math.round(base_waterborne.probability_pct*(1-factor*0.85)),1)}%, ${Math.round(base_neuro.children_at_risk*factor*0.78)} children saved from neurological damage.`,outcomes:[{dimension:'Water Quality',current:`Mercury ${d.mercury_mgl} mg/L`,projected:`Mercury ${(d.mercury_mgl*(1-factor*0.9)).toFixed(4)} mg/L`,change:`${Math.round(factor*90)}% improvement`,impact:'TRANSFORMATIONAL',detail:`${d.river} returns to ${d.mercury_mgl*(1-factor*0.9)<0.001?'SAFE':'IMPROVED'} status. ${d.population.toLocaleString()} people regain clean water.`},{dimension:'Disease Risk',current:`${base_waterborne.probability_pct}%`,projected:`${Math.max(Math.round(base_waterborne.probability_pct*(1-factor*0.85)),1)}%`,change:`${Math.round(factor*85)}% reduction`,impact:'MAJOR IMPROVEMENT',detail:`Cases fall from ${base_waterborne.expected_cases_week1} to ${Math.max(Math.round(base_waterborne.expected_cases_week1*(1-factor*0.85)),1)} per week.`},{dimension:'Children Protected',current:`${base_neuro.children_at_risk} at risk`,projected:`${Math.max(Math.round(base_neuro.children_at_risk*(1-factor*0.78)),0)} at risk`,change:`${Math.round(base_neuro.children_at_risk*factor*0.78)} children saved`,impact:'TRANSFORMATIONAL',detail:`Fish mercury falls to ${(d.mercury_mgl*(1-factor*0.9)*1000).toFixed(2)} mg/kg.`},{dimension:'Agriculture',current:`${base_food.yield_reduction_pct}% loss`,projected:`${Math.max(Math.round(base_food.yield_reduction_pct*(1-factor*0.8)),0)}% loss`,change:`${Math.round(factor*80)}% recovery`,impact:'MAJOR IMPROVEMENT',detail:`${Math.round(base_food.people_at_risk*factor*0.75).toLocaleString()} farmers regain viable livelihoods.`},{dimension:'Carbon Revenue',current:'No verified income',projected:`USD ${Math.round((100-d.forest_cover_pct)*factor*0.35)}M/yr`,change:'New income stream',impact:'POSITIVE',detail:`REDD+ certification unlocked by restored watershed.`},{dimension:'Economic Return',current:`GHS ${Math.round(d.mercury_mgl*d.population*0.0008)}M loss/yr`,projected:`GHS ${Math.round(d.mercury_mgl*d.population*0.0008*factor*0.6)}M gain/yr`,change:'Net positive within 2 years',impact:'TRANSFORMATIONAL',detail:`ROI: ${Math.round((d.mercury_mgl*d.population*0.0008*factor*0.6*10)/(d.mercury_mgl*500*factor+1))} to 1 over 10 years.`}],totalEconomicImpact:`GHS ${Math.round(d.mercury_mgl*d.population*0.0008*factor*0.6*10)}M net positive over 10 years`,peoplAtRisk:`${Math.round(d.population*factor*0.85).toLocaleString()} people directly benefit`,recommendation:`Investment GHS ${Math.round(d.mercury_mgl*500*factor)}M generates ${Math.round((d.mercury_mgl*d.population*0.0008*factor*0.6*10)/(d.mercury_mgl*500*factor+1))} to 1 return. ${Math.round(base_neuro.children_at_risk*factor*0.78)} children saved.`},
-    mining_banned:{name:'Enforcement Crackdown',icon:'👮',description:`Eliminate ${d.illegal_sites} illegal sites in ${r} within 12 months`,summary:`Enforcement model: ${d.illegal_sites} sites eliminated, GHS ${Math.round(d.mercury_mgl*d.population*0.0008*factor*2.1*5)}M saved over 5 years, ${Math.round(base_neuro.children_at_risk*factor*0.7)} children protected.`,outcomes:[{dimension:'Sites Eliminated',current:`${d.illegal_sites} active`,projected:`${Math.max(Math.round(d.illegal_sites*(1-factor*0.95)),0)} remaining`,change:`${Math.round(factor*95)}% eliminated`,impact:'TRANSFORMATIONAL',detail:`${Math.round(d.illegal_sites*factor*0.4)} criminal prosecutions. GHS ${Math.round(d.illegal_sites*factor*0.9)}M equipment seized.`},{dimension:'Water Recovery',current:`Mercury ${d.mercury_mgl} mg/L`,projected:`${(d.mercury_mgl*(1-factor*0.7)).toFixed(4)} mg/L in 18 months`,change:`${Math.round(factor*70)}% improvement`,impact:'MAJOR IMPROVEMENT',detail:`${d.river} self-recovery begins 6 months after enforcement.`},{dimension:'Disease Risk',current:`${base_waterborne.probability_pct}%`,projected:`${Math.max(Math.round(base_waterborne.probability_pct*(1-factor*0.75)),1)}%`,change:`${Math.round(factor*75)}% reduction`,impact:'MAJOR IMPROVEMENT',detail:`${Math.round(base_neuro.children_at_risk*factor*0.7)} children protected.`},{dimension:'Economic Savings',current:`GHS ${Math.round(d.mercury_mgl*d.population*0.0008)}M loss/yr`,projected:`GHS ${Math.round(d.mercury_mgl*d.population*0.0008*factor*2.1)}M saved/yr`,change:'Losses become savings',impact:'MAJOR IMPROVEMENT',detail:`Full cascade savings across water, health, agriculture.`},{dimension:'Rule of Law',current:'Widespread violations',projected:'Compliance culture established',change:'Systemic change',impact:'TRANSFORMATIONAL',detail:'Ghana EPA gains international credibility — attracts responsible investment.'},{dimension:'Agriculture',current:`${base_food.yield_reduction_pct}% yield loss`,projected:`${Math.max(Math.round(base_food.yield_reduction_pct*(1-factor*0.65)),0)}% loss`,change:`${Math.round(factor*65)}% recovery`,impact:'POSITIVE',detail:`Cocoa yields improve ${Math.round(factor*32)}% within 2 seasons.`}],totalEconomicImpact:`GHS ${Math.round(d.mercury_mgl*d.population*0.0008*factor*2.1*5)}M savings over 5 years`,peoplAtRisk:`${Math.round(d.population*factor*0.85).toLocaleString()} protected`,recommendation:`Cost GHS ${Math.round(d.illegal_sites*factor*0.4)}M. Return GHS ${Math.round(d.mercury_mgl*d.population*0.0008*factor*2.1*5)}M over 5 years. ROI ${Math.round((d.mercury_mgl*d.population*0.0008*factor*2.1*5)/(d.illegal_sites*factor*0.4+1))} to 1.`},
-    reforestation:{name:'Large-Scale Reforestation',icon:'🌳',description:`Restore 50,000 hectares in ${r} over 5 years`,summary:`Reforestation model: deforestation reverses from ${d.deforestation_rate}% loss to ${(factor*1.8).toFixed(1)}% gain, resilience recovers from ${base_eco.resilience_index} to ${Math.min((base_eco.resilience_index*(1+factor*1.4)).toFixed(2),1.0)}, USD ${Math.round(factor*14)}M/yr carbon revenue.`,outcomes:[{dimension:'Forest Recovery',current:`${d.forest_cover_pct}% — loss ${d.deforestation_rate}%/yr`,projected:`${Math.min(Math.round(d.forest_cover_pct+factor*12),80)}% — gain ${(factor*1.8).toFixed(1)}%/yr`,change:'Decline fully reversed',impact:'TRANSFORMATIONAL',detail:`Resilience recovers from ${base_eco.resilience_index} to ${Math.min((base_eco.resilience_index*(1+factor*1.4)).toFixed(2),1.0)}.`},{dimension:'Carbon Revenue',current:'GHS 0',projected:`USD ${Math.round(factor*14)}M/yr`,change:'New sustainable income',impact:'TRANSFORMATIONAL',detail:`REDD+: 50,000ha × ${(factor*2.8).toFixed(1)} t CO2/ha/yr × USD ${Math.round(factor*10)}/t.`},{dimension:'Water Security',current:`${d.turbidity_ntu} NTU`,projected:`${Math.round(d.turbidity_ntu*(1-factor*0.6))} NTU`,change:`${Math.round(factor*60)}% improvement`,impact:'MAJOR IMPROVEMENT',detail:`Forest canopy reduces erosion runoff by ${Math.round(factor*60)}%.`},{dimension:'Employment',current:'Unemployment from mining',projected:`${Math.round(factor*8400)} permanent jobs`,change:'Economic diversification',impact:'MAJOR IMPROVEMENT',detail:`${Math.round(factor*2100)} direct + ${Math.round(factor*6300)} eco-tourism jobs.`},{dimension:'Pandemic Risk',current:`${predictPandemicEmergence(d).spillover_probability_12m}% spillover probability`,projected:`${Math.max(Math.round(predictPandemicEmergence(d).spillover_probability_12m*(1-factor*0.7)),1)}%`,change:`${Math.round(factor*70)}% reduction`,impact:'MAJOR IMPROVEMENT',detail:'Restored forest buffer reduces human-wildlife interface and pandemic emergence risk.'},{dimension:'Biodiversity',current:'Habitat fragmented',projected:`${Math.round(factor*34)}% habitat expansion`,change:'Corridors restored',impact:'POSITIVE',detail:`Eco-tourism: GHS ${Math.round(factor*4)}M annual visitor revenue.`}],totalEconomicImpact:`USD ${Math.round(factor*14*10)}M over 10 years`,peoplAtRisk:`${Math.round(factor*8400).toLocaleString()} people gain employment`,recommendation:`Investment GHS ${Math.round(factor*45)}M → return USD ${Math.round(factor*14*10)}M. ROI ${Math.round((factor*14*10*5.8)/(factor*45+1))} to 1. Plus ${Math.round(factor*8400)} jobs and permanent pandemic risk reduction.`},
-  };
-  const s=scenarios[scenario]||scenarios.mining_doubles;
-  res.json({region:r,scenario:s.name,description:s.description,icon:s.icon,intensity:level,...s});
-});
-
-app.get('/', (req, res) => {
-  res.json({
-    status: 'QGIF Intelligence Server v6.0',
-    features: [
-      '✓ 6 Real Mathematical Prediction Models',
-      '✓ Digital Lawyer — Community Evidence Generator',
-      '✓ Tailings Dam Collapse Predictor',
-      '✓ Parametric Crop Insurance Engine',
-      '✓ Real-Time Air Quality Alert System',
-      '✓ Criminal Network Intelligence',
-      '✓ Quantum Optimizer (QAOA + Quantum Walk)',
-      '✓ Scenario Simulator',
-      '✓ Disease Intelligence Engine',
-    ]
-  });
-});
-
-// ============================================================
-// MONITORING SYSTEM — Automated 30-day environmental watch
-// Tracks all 12 Ghana regions, flags new disturbances,
-// stores history, sends alerts
-// ============================================================
-
-const MONITORING_FILE = path.join(__dirname, 'monitoring_history.json');
-const ALERTS_FILE = path.join(__dirname, 'monitoring_alerts.json');
-
-// Load or initialize monitoring history
-function loadMonitoringHistory() {
-  try {
-    if (fs.existsSync(MONITORING_FILE)) {
-      return JSON.parse(fs.readFileSync(MONITORING_FILE, 'utf8'));
+  const clearAnnotations=()=>{
+    if(window.confirm('Clear all annotations? This cannot be undone.')){
+      saveAnnotations([]);
     }
-  } catch(e) { console.log('  ⚠ Could not load monitoring history:', e.message); }
-  return { regions: {}, last_run: null, total_runs: 0 };
-}
-
-function saveMonitoringHistory(data) {
-  try { fs.writeFileSync(MONITORING_FILE, JSON.stringify(data, null, 2)); }
-  catch(e) { console.log('  ⚠ Could not save monitoring history:', e.message); }
-}
-
-function loadAlerts() {
-  try {
-    if (fs.existsSync(ALERTS_FILE)) {
-      return JSON.parse(fs.readFileSync(ALERTS_FILE, 'utf8'));
-    }
-  } catch(e) {}
-  return { alerts: [], total_alerts: 0 };
-}
-
-function saveAlerts(data) {
-  try { fs.writeFileSync(ALERTS_FILE, JSON.stringify(data, null, 2)); }
-  catch(e) { console.log('  ⚠ Could not save alerts:', e.message); }
-}
-
-// Run monitoring check for a single region
-async function monitorRegion(regionName, regionData) {
-  try {
-    const raw = await getLiveDetection(regionData.lat, regionData.lng, 5000);
-    const intel = interpretDetection(raw, 5);
-    const currentDate = new Date(raw.current_date).toISOString().split('T')[0];
-    const degradationGap = Math.round((raw.ndvi_mean - raw.ndvi_p10) * 1000) / 1000;
-
-    return {
-      region: regionName,
-      checked_at: new Date().toISOString(),
-      satellite_date: currentDate,
-      ndvi_mean: Math.round((raw.ndvi_mean || 0) * 1000) / 1000,
-      ndvi_p10: Math.round((raw.ndvi_p10 || 0) * 1000) / 1000,
-      degradation_gap: degradationGap,
-      bsi_mean: Math.round((raw.bsi_mean || 0) * 1000) / 1000,
-      bsi_change: Math.round((raw.bsi_change_mean || 0) * 1000) / 1000,
-      mining_score: intel.mining_detection.score,
-      contamination_score: intel.water_contamination.score,
-      mercury_proxy_mgl: intel.water_contamination.mercury_proxy_mgl,
-      outbreak_probability: intel.health_risk.outbreak_probability_30days_pct,
-      threat_level: intel.overall.threat_level,
-      status: 'OK',
-    };
-  } catch(e) {
-    return { region: regionName, checked_at: new Date().toISOString(), status: 'ERROR', error: e.message };
-  }
-}
-
-// Generate alert message
-function generateAlert(regionName, previous, current) {
-  const gap_change = Math.round((current.degradation_gap - previous.degradation_gap) * 1000) / 1000;
-  const mining_change = current.mining_score - previous.mining_score;
-  const date = new Date().toISOString().split('T')[0];
-
-  let severity = 'INFO';
-  let message = '';
-
-  if (gap_change >= 0.1 || mining_change >= 20) {
-    severity = 'CRITICAL';
-    message = `CRITICAL ALERT — ${regionName}: Major new land disturbance detected. Degradation gap increased from ${previous.degradation_gap} to ${current.degradation_gap} (+${gap_change}). Mining score: ${previous.mining_score} → ${current.mining_score}. IMMEDIATE field verification recommended.`;
-  } else if (gap_change >= 0.05 || mining_change >= 10) {
-    severity = 'WARNING';
-    message = `WARNING — ${regionName}: New disturbance detected since last check. Degradation gap increased from ${previous.degradation_gap} to ${current.degradation_gap} (+${gap_change}). Mining score: ${previous.mining_score} → ${current.mining_score}. EPA field visit recommended within 7 days.`;
-  } else if (gap_change >= 0.02) {
-    severity = 'WATCH';
-    message = `WATCH — ${regionName}: Minor increase in land disturbance. Degradation gap: ${previous.degradation_gap} → ${current.degradation_gap} (+${gap_change}). Monitor closely. Next check in 30 days.`;
-  } else if (gap_change <= -0.05) {
-    severity = 'IMPROVEMENT';
-    message = `IMPROVEMENT — ${regionName}: Satellite signals show reduced disturbance. Degradation gap decreased from ${previous.degradation_gap} to ${current.degradation_gap} (${gap_change}). Possible enforcement success or seasonal vegetation recovery.`;
-  }
-
-  if (!message) return null;
-
-  return {
-    id: `ALERT-${Date.now()}`,
-    date,
-    region: regionName,
-    severity,
-    message,
-    gap_change,
-    mining_score_change: mining_change,
-    previous_gap: previous.degradation_gap,
-    current_gap: current.degradation_gap,
-    previous_mining_score: previous.mining_score,
-    current_mining_score: current.mining_score,
-    satellite_date: current.satellite_date,
-    coordinates: { lat: REGION_DATA[regionName]?.lat, lng: REGION_DATA[regionName]?.lng },
-    recommended_action: severity === 'CRITICAL' ? 'IMMEDIATE field verification — contact EPA enforcement unit' :
-                        severity === 'WARNING' ? 'EPA field visit within 7 days — verify satellite finding' :
-                        severity === 'WATCH' ? 'Schedule monitoring visit within 30 days' :
-                        'Document improvement — update enforcement records',
   };
+
+  const counts=LABELS.reduce((acc,l)=>{
+    acc[l.key]=annotations.filter(a=>a.label===l.key).length;
+    return acc;
+  },{});
+  const total=annotations.length;
+  const target=500;
+  const progress=Math.min(100,Math.round((total/target)*100));
+  const loc=ALL_LOCATIONS[currentIdx];
+
+  return(
+    <div className="tab-content" style={{background:BG}}>
+      <div className="tab-inner" style={{margin:"0 auto"}}>
+
+        {/* Header */}
+        <div style={{marginBottom:20}}>
+          <div style={{...ss,fontSize:18,fontWeight:600,color:TEXT,marginBottom:4,letterSpacing:"-.02em"}}>ML Training Data — Annotation Tool</div>
+          <div style={{...sm,fontSize:9,color:MUTED,letterSpacing:".1em",textTransform:"uppercase"}}>Label satellite locations to train the mining detection model</div>
+        </div>
+
+        {/* Progress */}
+        <div className="card" style={{marginBottom:16}}>
+          <div className="section-label">Dataset Progress</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div style={{...sm,fontSize:13,color:CYAN,fontWeight:500}}>{total} labeled</div>
+            <div style={{...sm,fontSize:12,color:MUTED}}>{target - total} remaining to reach target of {target}</div>
+          </div>
+          <div style={{height:8,background:"rgba(14,165,233,.1)",borderRadius:4,marginBottom:12,overflow:"hidden"}}>
+            <div style={{height:"100%",width:`${progress}%`,background:`linear-gradient(90deg,${CYAN},${GREEN})`,borderRadius:4,transition:"width .5s ease"}}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6}}>
+            {LABELS.map(l=>(
+              <div key={l.key} style={{background:BG,borderRadius:6,padding:"8px 6px",textAlign:"center",border:`1px solid ${l.color}22`}}>
+                <div style={{...sm,fontSize:18,fontWeight:600,color:l.color}}>{counts[l.key]||0}</div>
+                <div style={{...sm,fontSize:9,color:MUTED,marginTop:2}}>{l.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Annotator name */}
+        <div className="card" style={{marginBottom:16,display:"flex",gap:10,alignItems:"center"}}>
+          <div style={{...sm,fontSize:10,color:MUTED,whiteSpace:"nowrap"}}>ANNOTATOR</div>
+          <input className="input" value={annotatorName} onChange={e=>setAnnotatorName(e.target.value)} style={{maxWidth:200}}/>
+          <div style={{...sm,fontSize:10,color:MUTED,flex:1}}>Location {currentIdx+1} of {ALL_LOCATIONS.length}</div>
+          <button className="btn-outline btn btn-sm" onClick={skipLocation}>Skip</button>
+        </div>
+
+        {/* Current location */}
+        <div className="card" style={{marginBottom:16,borderColor:`rgba(14,165,233,.25)`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
+            <div>
+              <div style={{...sm,fontSize:9,color:MUTED,marginBottom:4}}>CURRENT LOCATION TO LABEL</div>
+              <div style={{...ss,fontSize:15,fontWeight:600,color:TEXT}}>{loc?.name}</div>
+              <div style={{...sm,fontSize:10,color:MUTED,marginTop:2}}>{loc?.lat}°N, {loc?.lng}°E</div>
+            </div>
+            <div style={{background:`${loc?.type==="mining"?RED:GREEN}14`,border:`1px solid ${loc?.type==="mining"?RED:GREEN}44`,borderRadius:6,padding:"4px 10px"}}>
+              <div style={{...sm,fontSize:9,color:MUTED}}>SUGGESTED</div>
+              <div style={{...sm,fontSize:11,fontWeight:600,color:loc?.type==="mining"?RED:GREEN}}>{loc?.type?.toUpperCase()}</div>
+            </div>
+          </div>
+
+          {/* Satellite data */}
+          {loading&&<div style={{...ss,fontSize:12,color:AMBER,display:"flex",alignItems:"center",gap:6,marginBottom:12}}><span style={{width:6,height:6,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/>Querying Earth Engine for satellite data...</div>}
+          {error&&<div style={{...ss,fontSize:12,color:RED,marginBottom:12}}>{error}</div>}
+
+          {currentData&&!loading&&(
+            <div>
+              <div style={{...sm,fontSize:9,color:GREEN,marginBottom:8,display:"flex",alignItems:"center",gap:5}}>
+                <span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block"}}/>
+                LIVE SENTINEL-2 · {currentData.current_date||""}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(80px,1fr))",gap:6,marginBottom:12}}>
+                {[
+                  ["NDVI",currentData.ndvi_mean,v=>v>0.5?GREEN:v>0.3?AMBER:RED],
+                  ["BSI",currentData.bsi_mean,v=>v>0.2?RED:v>0?AMBER:GREEN],
+                  ["BSI Chg",currentData.bsi_change_mean,v=>v>0.05?RED:v>0?AMBER:GREEN],
+                  ["MNDWI",currentData.mndwi_mean,v=>v>0.1?CYAN:GREEN],
+                  ["Iron Ox",currentData.ior_mean,v=>v>1.5?RED:v>1.2?AMBER:GREEN],
+                  ["Deg Gap",Math.round(((currentData.ndvi_mean||0)-(currentData.ndvi_p10||0))*1000)/1000,v=>v>0.3?RED:v>0.15?AMBER:GREEN],
+                ].map(([label,val,colorFn])=>(
+                  <div key={label} className="stat-box">
+                    <div className="stat-label">{label}</div>
+                    <div style={{...sm,fontSize:14,fontWeight:600,color:colorFn(val||0)}}>{Math.round((val||0)*1000)/1000}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Label buttons */}
+          <div style={{...sm,fontSize:9,color:MUTED,marginBottom:8,letterSpacing:".08em"}}>SELECT THE CORRECT LABEL FOR THIS LOCATION:</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {LABELS.map(l=>(
+              <button key={l.key} onClick={()=>handleLabel(l.key)}
+                disabled={loading||!currentData}
+                style={{flex:1,minWidth:100,padding:"12px 8px",borderRadius:7,border:`2px solid ${l.color}`,background:`${l.color}12`,color:l.color,fontSize:13,fontWeight:700,cursor:loading||!currentData?"not-allowed":"pointer",fontFamily:"Inter,'Segoe UI',sans-serif",transition:"all .15s",opacity:loading||!currentData?0.5:1}}>
+                {l.label}
+                <div style={{fontSize:10,fontWeight:400,opacity:.8,marginTop:2}}>{l.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Location list */}
+        <div className="card" style={{marginBottom:16}}>
+          <div className="section-label">All Locations ({ALL_LOCATIONS.length} total)</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:6}}>
+            {ALL_LOCATIONS.map((l,i)=>{
+              const alreadyLabeled=annotations.filter(a=>a.location_name===l.name).length;
+              return(
+                <div key={i} onClick={()=>setCurrentIdx(i)}
+                  style={{padding:"8px 10px",borderRadius:6,cursor:"pointer",border:`1px solid ${i===currentIdx?CYAN:BORDER}`,background:i===currentIdx?`${CYAN}0A`:BG,transition:"all .15s"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div style={{...ss,fontSize:11,fontWeight:i===currentIdx?600:400,color:i===currentIdx?CYAN:TEXT}}>{l.name}</div>
+                    {alreadyLabeled>0&&<div style={{...sm,fontSize:9,color:GREEN}}>✓ {alreadyLabeled}</div>}
+                  </div>
+                  <div style={{...sm,fontSize:9,color:l.type==="mining"?RED:GREEN,marginTop:2}}>{l.type}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Export section */}
+        <div className="card" style={{borderColor:`rgba(16,185,129,.3)`}}>
+          <div className="section-label">Export Dataset for Google Colab Training</div>
+          <div style={{...ss,fontSize:12,color:TEXT2,marginBottom:12,lineHeight:1.6}}>
+            When you have labeled enough locations, export the dataset as a CSV file. Upload it to Google Colab to train the machine learning model.
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:total>0?12:0}}>
+            <button className="btn-primary btn" onClick={exportCSV} disabled={total===0}>
+              Export {total} Annotations as CSV
+            </button>
+            {total>0&&<button className="btn-danger btn" onClick={clearAnnotations}>Clear All</button>}
+          </div>
+          {total>0&&(
+            <div style={{...sm,fontSize:10,color:MUTED,lineHeight:1.7}}>
+              Dataset contains {total} labeled locations · {counts.mining||0} mining · {counts.forest||0} forest · {counts.water||0} water · {counts.farmland||0} farmland · {counts.settlement||0} settlement
+            </div>
+          )}
+          {total===0&&<div style={{...sm,fontSize:11,color:MUTED}}>Start labeling locations above to build your training dataset.</div>}
+        </div>
+
+        {/* Instructions */}
+        <div className="card" style={{marginTop:16}}>
+          <div className="section-label">How To Use This Tool</div>
+          {[
+            ["1","Load","Each location automatically loads its live Sentinel-2 satellite data from Google Earth Engine. Wait for the spectral values to appear."],
+            ["2","Read the data","Look at the NDVI, BSI, and Degradation Gap values. High BSI + low NDVI + high degradation gap = likely mining."],
+            ["3","Label","Click the correct label button. The suggested label is shown but you make the final decision based on the satellite data and your knowledge of the location."],
+            ["4","Repeat","Work through all locations. You can revisit any location by clicking it in the list below. Aim for at least 100 mining examples and 100 non-mining examples."],
+            ["5","Export","When you have 200-500 labels, export the CSV and upload it to Google Colab to train the model."],
+          ].map(([n,title,desc])=>(
+            <div key={n} style={{display:"flex",gap:12,marginBottom:10,alignItems:"flex-start"}}>
+              <div style={{width:24,height:24,borderRadius:6,background:`${CYAN}14`,border:`1px solid ${CYAN}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                <span style={{...sm,fontSize:11,fontWeight:600,color:CYAN}}>{n}</span>
+              </div>
+              <div>
+                <div style={{...ss,fontSize:12,fontWeight:600,color:TEXT,marginBottom:2}}>{title}</div>
+                <div style={{...ss,fontSize:11,color:MUTED,lineHeight:1.5}}>{desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{height:40}}/>
+      </div>
+    </div>
+  );
 }
 
-// Run full monitoring check for all 12 regions
-async function runFullMonitoringCheck() {
-  if (!EE_READY) {
-    console.log('  ⚠ Monitoring check skipped — Earth Engine not ready');
-    return { status: 'SKIPPED', reason: 'Earth Engine not connected' };
-  }
+export default function App(){
+  const [role,setRole]=useState(ROLES[0]);
+  const [layer,setLayer]=useState(LAYERS[0]);
+  const [region,setRegion]=useState(null);
+  const [prediction,setPrediction]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [customQ,setCustomQ]=useState("");
+  const [showRoleModal,setShowRoleModal]=useState(false);
+  const [time,setTime]=useState("");
+  const [activeRegion,setActiveRegion]=useState(null);
+  const [activeTab,setActiveTab]=useState("Map");
+  // New map state
+  const [searchQuery,setSearchQuery]=useState("");
+  const [mapCenter,setMapCenter]=useState(null);
+  const [showHotspots,setShowHotspots]=useState(true);
+  const [showTowns,setShowTowns]=useState(true);
+  const [showRivers,setShowRivers]=useState(false); // eslint-disable-line no-unused-vars
+  const [clickedCoord,setClickedCoord]=useState(null);
+  const [qData,setQData]=useState(null);
+  const [qLoading,setQLoading]=useState(false);
+  const [qType,setQType]=useState("land");
+  const [riskData,setRiskData]=useState(null);
+  const [riskLoading,setRiskLoading]=useState(false);
+  const [scData,setScData]=useState(null);
+  const [scLoading,setScLoading]=useState(false);
+  const [scScenario,setScScenario]=useState("mining_doubles");
+  const [scIntensity,setScIntensity]=useState(75);
+  const [scRegion,setScRegion]=useState("Western Region");
+  const [diseaseData,setDiseaseData]=useState(null);
+  const [diseaseLoading,setDiseaseLoading]=useState(false);
+  const [lawyerData,setLawyerData]=useState(null);
+  const [lawyerLoading,setLawyerLoading]=useState(false);
+  const [damData,setDamData]=useState(null);
+  const [damLoading,setDamLoading]=useState(false);
+  const [insuranceData,setInsuranceData]=useState(null);
+  const [insuranceLoading,setInsuranceLoading]=useState(false);
+  const [airData,setAirData]=useState(null);
+  const [airLoading,setAirLoading]=useState(false);
+  const [criminalData,setCriminalData]=useState(null);
+  const [criminalLoading,setCriminalLoading]=useState(false);
+  const [monitorData,setMonitorData]=useState(null);
+  const [monitorLoading,setMonitorLoading]=useState(false);
+  const [dashData,setDashData]=useState(null);
+  const [dashLoading,setDashLoading]=useState(false);
+  const [timelineData,setTimelineData]=useState(null);
+  const [timelineLoading,setTimelineLoading]=useState(false);
+  const [satData,setSatData]=useState(null);
+  const [satLoading,setSatLoading]=useState(false);
+  const [liveDetect,setLiveDetect]=useState(null);
+  const [liveDetectLoading,setLiveDetectLoading]=useState(false);
 
-  console.log('\n  ═══════════════════════════════════════');
-  console.log('  QGIF MONITORING SYSTEM — Starting check');
-  console.log('  ═══════════════════════════════════════');
+  const TABS=["Map","Intelligence","Quantum","Legal & Evidence","Monitoring","Timeline","Annotate"];
 
-  const history = loadMonitoringHistory();
-  const alertsData = loadAlerts();
-  const newAlerts = [];
-  const results = {};
-  const checkDate = new Date().toISOString();
+  useEffect(()=>{const t=setInterval(()=>setTime(new Date().toLocaleTimeString("en-GB")+" GMT"),1000);return()=>clearInterval(t);},[]);
 
-  const regions = Object.keys(REGION_DATA);
+  const post=useCallback(async(url,body)=>{
+    const r=await fetch("https://qgif-backend.onrender.com"+url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    return r.json();
+  },[]);
 
-  for (const regionName of regions) {
-    console.log(`  Checking ${regionName}...`);
-    const result = await monitorRegion(regionName, REGION_DATA[regionName]);
-    results[regionName] = result;
+  const runPrediction=useCallback(async(reg,lay,rol,q=null)=>{
+    setLoading(true);setPrediction(null);
+    try{const d=await post("/predict",{region:reg,layer:lay.key,role:rol.key,question:q});setPrediction(d);}
+    catch(e){setPrediction({_error:e.message});}
+    finally{setLoading(false);}
+  },[post]);
 
-    // Compare with previous reading if exists
-    if (history.regions[regionName] && result.status === 'OK') {
-      const previous = history.regions[regionName].latest;
-      if (previous && previous.status === 'OK') {
-        const alert = generateAlert(regionName, previous, result);
-        if (alert) {
-          newAlerts.push(alert);
-          alertsData.alerts.unshift(alert); // newest first
-          alertsData.total_alerts++;
-          console.log(`  ⚠ ALERT: ${alert.severity} — ${regionName}`);
-        } else {
-          console.log(`  ✓ ${regionName}: No significant change (gap: ${result.degradation_gap})`);
+  const runQuantum=useCallback(async(reg,type)=>{setQLoading(true);setQData(null);try{const d=await post(type==="land"?"/quantum/land-optimizer":"/quantum/route-optimizer",{region:reg||"Western Region"});setQData(d);}catch(e){setQData({_error:e.message});}finally{setQLoading(false);}},[post]);
+  const runRisk=useCallback(async(reg)=>{setRiskLoading(true);setRiskData(null);try{const d=await post("/quantum/risk-scorer",{region:reg||"Western Region"});setRiskData(d);}catch(e){setRiskData({_error:e.message});}finally{setRiskLoading(false);}},[post]);
+  const runScenario=useCallback(async()=>{setScLoading(true);setScData(null);try{const d=await post("/scenario",{region:scRegion,scenario:scScenario,intensity:scIntensity});setScData(d);}catch(e){setScData({_error:e.message});}finally{setScLoading(false);}},[post,scRegion,scScenario,scIntensity]);
+  const runDisease=useCallback(async(reg)=>{setDiseaseLoading(true);setDiseaseData(null);try{const d=await post("/disease-intelligence",{region:reg||"Western Region"});setDiseaseData(d);}catch(e){setDiseaseData({_error:e.message});}finally{setDiseaseLoading(false);}},[post]);
+  const runLawyer=useCallback(async(form)=>{setLawyerLoading(true);setLawyerData(null);try{const d=await post("/digital-lawyer",form);setLawyerData(d);}catch(e){setLawyerData({_error:e.message});}finally{setLawyerLoading(false);}},[post]);
+  const runDam=useCallback(async(form)=>{setDamLoading(true);setDamData(null);try{const d=await post("/dam-risk",form);setDamData(d);}catch(e){setDamData({_error:e.message});}finally{setDamLoading(false);}},[post]);
+  const runInsurance=useCallback(async(form)=>{setInsuranceLoading(true);setInsuranceData(null);try{const d=await post("/crop-insurance",form);setInsuranceData(d);}catch(e){setInsuranceData({_error:e.message});}finally{setInsuranceLoading(false);}},[post]);
+  const runAir=useCallback(async(reg)=>{setAirLoading(true);setAirData(null);try{const d=await post("/air-quality",{region:reg});setAirData(d);}catch(e){setAirData({_error:e.message});}finally{setAirLoading(false);}},[post]);
+  const runCriminal=useCallback(async(reg)=>{setCriminalLoading(true);setCriminalData(null);try{const d=await post("/criminal-network",{region:reg});setCriminalData(d);}catch(e){setCriminalData({_error:e.message});}finally{setCriminalLoading(false);}},[post]);
+  const runSatelliteCheck=useCallback(async(reg)=>{setSatLoading(true);setSatData(null);try{const d=await post("/satellite-check",{region:reg});setSatData(d);}catch(e){setSatData({_error:e.message});}finally{setSatLoading(false);}},[post]);
+  const runMonitor=useCallback(async()=>{setMonitorLoading(true);setMonitorData(null);try{const r=await fetch("https://qgif-backend.onrender.com/monitoring/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({secret:"qgif-monitor-2026"})});const d=await r.json();setMonitorData(d);}catch(e){setMonitorData({_error:e.message});}finally{setMonitorLoading(false);}},[]);
+  const loadDash=useCallback(async()=>{setDashLoading(true);try{const r=await fetch("https://qgif-backend.onrender.com/monitoring/dashboard");const d=await r.json();setDashData(d);}catch(e){setDashData({_error:e.message});}finally{setDashLoading(false);}},[]);
+  const runTimeline=useCallback(async(lat,lng,name)=>{setTimelineLoading(true);setTimelineData(null);try{const r=await fetch("https://qgif-backend.onrender.com/historical-timeline",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lat,lng,name})});const d=await r.json();setTimelineData(d);}catch(e){setTimelineData({_error:e.message});}finally{setTimelineLoading(false);}},[]);
+
+  const handleRegionClick=useCallback((name)=>{setRegion(name);setActiveRegion(name);setClickedCoord(null);runPrediction(name,layer,role);runSatelliteCheck(name);},[layer,role,runPrediction,runSatelliteCheck]);
+  const handleCoordClick=useCallback(async(lat,lng,name)=>{
+    const label=name||`${lat.toFixed(4)}°N, ${Math.abs(lng).toFixed(4)}°W`;
+    setClickedCoord(label);setActiveRegion(null);
+    setLiveDetectLoading(true);setLiveDetect(null);setSatData(null);
+    try{
+      const r=await fetch("https://qgif-backend.onrender.com/detect-live",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lat,lng,name:label,radius:5})});
+      const d=await r.json();setLiveDetect(d);
+      // Also set satData from the detection result for the existing satellite panel
+      if(d.satellite_indices){setSatData({
+        earth_engine_status:'CONNECTED — REAL SATELLITE DATA',
+        satellite_date:d.imagery?.current_image_date,
+        ndvi_mean:d.satellite_indices.ndvi_mean,
+        ndvi_p10:d.satellite_indices.ndvi_p10,
+        degradation_gap:Math.round((d.satellite_indices.ndvi_mean - d.satellite_indices.ndvi_p10)*1000)/1000,
+        water_fraction_pct:d.satellite_indices.water_coverage_pct,
+        degradation_signal:d.mining_detection.score>50?'YES — land degradation detected':'No strong contrast signal',
+      });}
+    }catch(e){setLiveDetect({_error:e.message});}
+    finally{setLiveDetectLoading(false);}
+    // Also run prediction for nearest region
+    const regionDists=Object.entries(REGION_COORDS).map(([rname,rd])=>({rname,dist:Math.sqrt(Math.pow(rd.lat-lat,2)+Math.pow(rd.lng-lng,2))}));
+    const nearest=regionDists.sort((a,b)=>a.dist-b.dist)[0];
+    if(nearest){setRegion(nearest.rname);runPrediction(nearest.rname,layer,role);}
+  },[layer,role,runPrediction]);
+  const handleTabChange=useCallback((tab)=>{setActiveTab(tab);if(tab==="Monitoring"&&!dashData&&!dashLoading){loadDash();}},[dashData,dashLoading,loadDash]);
+
+  return(
+    <div style={{display:"grid",gridTemplateRows:"52px 1fr",height:"100vh",background:BG,color:TEXT,fontFamily:FB,fontSize:13,overflow:"hidden"}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:ital,wght@0,400;0,500&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        body,html{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:#040D1A;color:#E2EEF9;}
+        button{font-family:'Inter','Segoe UI',system-ui,sans-serif;transition:all .15s;cursor:pointer;}
+        input,select,textarea{font-family:'Inter','Segoe UI',system-ui,sans-serif;}
+        ::-webkit-scrollbar{width:3px;} ::-webkit-scrollbar-track{background:#040D1A;} ::-webkit-scrollbar-thumb{background:rgba(14,165,233,.2);border-radius:2px;}
+        input:focus,select:focus,textarea:focus{outline:none;border-color:#0EA5E9!important;}
+
+        @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+        @keyframes scan{0%{top:0;opacity:0}5%{opacity:1}95%{opacity:1}100%{top:100%;opacity:0}}
+        @keyframes qspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+        @keyframes hspulse{0%{r:5;opacity:.9}100%{r:22;opacity:0}}
+        @keyframes pulse{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(1.4);opacity:.3}}
+        @keyframes fadein{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+
+        /* typography */
+        .t-display{font-size:18px;font-weight:600;letter-spacing:-.02em;line-height:1.3;}
+        .t-title{font-size:14px;font-weight:600;letter-spacing:-.01em;}
+        .t-body{font-size:13px;line-height:1.65;}
+        .t-label{font-family:'DM Mono','Fira Mono',monospace;font-size:9px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#3D5A73;}
+        .t-data{font-family:'DM Mono','Fira Mono',monospace;font-size:13px;}
+        .t-data-lg{font-family:'DM Mono','Fira Mono',monospace;font-size:20px;font-weight:500;}
+
+        /* cards */
+        .card{background:#071526;border:1px solid rgba(14,165,233,.1);border-radius:8px;padding:14px 16px;margin-bottom:10px;}
+        .card-hi{background:#071526;border:1px solid rgba(14,165,233,.22);border-radius:8px;padding:14px 16px;margin-bottom:10px;}
+        .card-critical{border-left:3px solid #EF4444!important;}
+        .card-high{border-left:3px solid #F59E0B!important;}
+        .card-medium{border-left:3px solid #EAB308!important;}
+        .card-low{border-left:3px solid #10B981!important;}
+
+        /* legacy card class names — map to new */
+        .qgif-card{background:#071526;border:1px solid rgba(14,165,233,.1);border-radius:8px;padding:14px 16px;margin-bottom:10px;}
+        .qgif-card-highlight{background:#071526;border:1px solid rgba(14,165,233,.22);border-radius:8px;padding:14px 16px;margin-bottom:10px;}
+
+        /* buttons */
+        .btn,.qgif-btn-primary,.qgif-btn-secondary{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;}
+        .btn-primary,.qgif-btn-primary{background:#0EA5E9;color:#040D1A;font-weight:600;border:none;}
+        .btn-primary:hover,.qgif-btn-primary:hover{background:#38BDF8;}
+        .btn-primary:disabled,.qgif-btn-primary:disabled{background:#3D5A73;cursor:not-allowed;}
+        .btn-outline,.qgif-btn-secondary{background:transparent;color:#0EA5E9;border:1px solid rgba(14,165,233,.3);}
+        .btn-outline:hover,.qgif-btn-secondary:hover{background:rgba(14,165,233,.08);}
+
+        /* inputs */
+        .input,.qgif-input{background:#071526;border:1px solid rgba(14,165,233,.15);border-radius:6px;padding:8px 12px;color:#E2EEF9;font-size:13px;width:100%;}
+        .input:focus,.qgif-input:focus{border-color:#0EA5E9;}
+        .select,.qgif-select{background:#071526;border:1px solid rgba(14,165,233,.15);border-radius:6px;padding:8px 12px;color:#E2EEF9;font-size:13px;width:100%;}
+
+        /* stats */
+        .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:14px;}
+        .stat-box{background:#071526;border:1px solid rgba(14,165,233,.08);border-radius:6px;padding:10px 12px;text-align:center;}
+        .stat-label{font-family:'DM Mono','Fira Mono',monospace;font-size:9px;color:#3D5A73;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px;}
+        .stat-value{font-size:18px;font-weight:600;}
+
+        /* section label */
+        .section-label{font-family:'DM Mono','Fira Mono',monospace;font-size:9px;color:#3D5A73;letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(14,165,233,.07);}
+
+        /* alert colours */
+        .alert-critical{border-left:3px solid #EF4444;background:rgba(239,68,68,.05);}
+        .alert-warning{border-left:3px solid #F59E0B;background:rgba(245,158,11,.05);}
+        .alert-watch{border-left:3px solid #EAB308;background:rgba(234,179,8,.05);}
+        .alert-improvement{border-left:3px solid #10B981;background:rgba(16,185,129,.05);}
+
+        /* tab content */
+        .tab-content{width:100%;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+        .tab-inner{padding:20px;max-width:880px;}
+        .tab-scroll{display:flex;gap:2px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex:1;padding:0 2px;}
+        .tab-scroll::-webkit-scrollbar{display:none;}
+
+        /* leaflet */
+        .qgif-tooltip{background:#071526!important;border:1px solid rgba(14,165,233,.25)!important;color:#E2EEF9!important;font-family:'Inter',sans-serif!important;font-size:12px!important;padding:8px 12px!important;border-radius:6px!important;}
+        .leaflet-container{background:#040D1A!important;}
+        .leaflet-control-attribution{background:rgba(7,21,38,.9)!important;color:#3D5A73!important;font-size:9px!important;}
+        .leaflet-control-attribution a{color:#0EA5E9!important;}
+        .leaflet-control-zoom a{background:#071526!important;color:#0EA5E9!important;border-color:rgba(14,165,233,.2)!important;}
+        .leaflet-control-zoom a:hover{background:#0A1E33!important;}
+        .leaflet-container{touch-action:pan-x pan-y!important;}
+        .qgif-hotspot{background:#071526!important;border:1px solid rgba(239,68,68,.3)!important;color:#FCA5A5!important;}
+
+        /* mobile */
+        @media(max-width:768px){
+          .desktop-sidebar,.desktop-right{display:none!important;}
+          .mobile-bottom{display:flex!important;}
+          .main-grid{grid-template-columns:1fr!important;}
+          .hide-mobile{display:none!important;}
+          .tab-inner{padding:12px;}
+          .stat-grid{grid-template-columns:repeat(3,1fr)!important;}
         }
-      }
-    } else {
-      console.log(`  ✓ ${regionName}: First reading stored (gap: ${result.degradation_gap})`);
-    }
+        @media(min-width:769px){.mobile-bottom{display:none!important;}}
+        .mobile-bottom{display:none;position:fixed;bottom:0;left:0;right:0;background:#071526;border-top:1px solid rgba(14,165,233,.12);z-index:2000;flex-direction:column;max-height:65vh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+        @media(max-width:768px){.mobile-fullscreen-tab{display:flex!important;position:fixed;top:46px;left:0;right:0;bottom:0;z-index:500;background:#040D1A;overflow-y:auto;-webkit-overflow-scrolling:touch;flex-direction:column;}}
+        @media(min-width:769px){.mobile-fullscreen-tab{display:none!important;}}
+      `}</style>
 
-    // Update history for this region
-    if (!history.regions[regionName]) {
-      history.regions[regionName] = { readings: [], latest: null };
-    }
-    history.regions[regionName].readings.push(result);
-    history.regions[regionName].latest = result;
-    // Keep only last 24 readings (2 years of monthly checks)
-    if (history.regions[regionName].readings.length > 24) {
-      history.regions[regionName].readings = history.regions[regionName].readings.slice(-24);
-    }
-  }
+      {/* TOPBAR */}
+      <div style={{display:"flex",alignItems:"center",padding:"0 14px",background:PANEL,borderBottom:`1px solid ${BORDER}`,height:46,gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0,paddingRight:12,borderRight:`1px solid ${BORDER}`}}>
+          <div style={{width:24,height:24,background:CYAN,borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:BG}}>Q</div>
+          <span style={{fontSize:13,fontWeight:700,color:TEXT,letterSpacing:"-.01em"}}>QGIF</span>
+        </div>
+        <div className="tab-scroll">
+          {TABS.map(tab=>(
+            <button key={tab} onClick={()=>handleTabChange(tab)}
+              style={{padding:"4px 10px",borderRadius:5,fontSize:12,fontWeight:activeTab===tab?600:400,border:`1px solid ${activeTab===tab?CYAN:BORDER2}`,background:activeTab===tab?`${CYAN}14`:"transparent",color:activeTab===tab?CYAN:MUTED,whiteSpace:"nowrap",letterSpacing:"-.01em"}}>
+              {tab}
+            </button>
+          ))}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0,marginLeft:"auto"}}>
+          <button onClick={()=>setShowRoleModal(true)} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${BORDER}`,background:`${CYAN}08`,color:CYAN,fontSize:11,fontWeight:500,whiteSpace:"nowrap"}}>
+            {role.icon} <span className="hide-mobile">{role.label}</span>
+          </button>
+          <span className="hide-mobile" style={{fontFamily:"'DM Mono','Fira Mono',monospace",fontSize:10,color:GREEN,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
+            <span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block",animation:"blink 1.8s ease-in-out infinite"}}/>{time}
+          </span>
+        </div>
+      </div>
 
-  history.last_run = checkDate;
-  history.total_runs = (history.total_runs || 0) + 1;
+      <div className="main-grid" style={{display:"grid",gridTemplateColumns:"180px 1fr 300px",height:"calc(100vh - 46px)",overflow:"hidden"}}>
+        <div className="desktop-sidebar" style={{background:PANEL,borderRight:`1px solid ${BORDER}`,overflowY:"auto"}}>
+          <div style={{padding:"10px 8px",borderBottom:`1px solid ${BORDER2}`}}>
+            <Label text="INTELLIGENCE LAYERS"/>
+            {LAYERS.map(l=>(
+              <button key={l.key} onClick={()=>{setLayer(l);if(region)runPrediction(region,l,role);}} style={{display:"flex",alignItems:"center",gap:7,padding:"6px 8px",borderRadius:5,width:"100%",textAlign:"left",border:`1px solid ${layer.key===l.key?CYAN:BORDER2}`,marginBottom:2,cursor:"pointer",fontSize:11,fontFamily:FB,background:layer.key===l.key?`${CYAN}10`:"transparent",color:layer.key===l.key?CYAN:TEXT2}}>
+                <span>{l.icon}</span><span>{l.label}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{padding:"10px 8px"}}>
+            <Label text="RISK BY REGION"/>
+            {REGIONS.map(r=>(
+              <div key={r.name} onClick={()=>handleRegionClick(r.name)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${BORDER2}`,cursor:"pointer"}}>
+                <span style={{fontFamily:FB,fontSize:11,color:activeRegion===r.name?CYAN:TEXT}}>{r.name}</span>
+                <Tag label={r.risk} color={SEV_C[r.risk]||MUTED}/>
+              </div>
+            ))}
+          </div>
+        </div>
 
-  // Keep only last 500 alerts
-  alertsData.alerts = alertsData.alerts.slice(0, 500);
+        <div style={{overflow:"hidden",position:"relative"}}>
+          <div style={{display:activeTab==="Map"?"block":"none",width:"100%",height:"100%"}}><MapTab layer={layer} activeRegion={activeRegion} onRegionClick={handleRegionClick} onCoordClick={handleCoordClick} searchQuery={searchQuery} setSearchQuery={setSearchQuery} mapCenter={mapCenter} setMapCenter={setMapCenter} showHotspots={showHotspots} setShowHotspots={setShowHotspots} showTowns={showTowns} setShowTowns={setShowTowns} clickedCoord={clickedCoord} satLoading={liveDetectLoading} satData={satData}/></div>
+          <div style={{display:activeTab==="Intelligence"?"flex":"none",width:"100%",height:"100%",flexDirection:"column"}}><IntelligenceTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} diseaseData={diseaseData} diseaseLoading={diseaseLoading} runDisease={runDisease} riskData={riskData} riskLoading={riskLoading} runRisk={runRisk} scData={scData} scLoading={scLoading} scScenario={scScenario} setScScenario={setScScenario} scIntensity={scIntensity} setScIntensity={setScIntensity} scRegion={scRegion} setScRegion={setScRegion} runScenario={runScenario} airData={airData} airLoading={airLoading} runAir={runAir} insuranceData={insuranceData} insuranceLoading={insuranceLoading} runInsurance={runInsurance} damData={damData} damLoading={damLoading} runDam={runDam}/></div>
+          <div style={{display:activeTab==="Quantum"?"flex":"none",width:"100%",height:"100%",flexDirection:"column"}}><QuantumHubTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} qData={qData} qLoading={qLoading} qType={qType} setQType={setQType} runQuantum={runQuantum} criminalData={criminalData} criminalLoading={criminalLoading} runCriminal={runCriminal}/></div>
+          <div style={{display:activeTab==="Legal & Evidence"?"flex":"none",width:"100%",height:"100%"}}><LawyerTab lawyerData={lawyerData} lawyerLoading={lawyerLoading} runLawyer={runLawyer}/></div>
+          <div style={{display:activeTab==="Monitoring"?"flex":"none",width:"100%",height:"100%",overflowY:"auto"}}><MonitoringTab monitorData={monitorData} monitorLoading={monitorLoading} runMonitor={runMonitor} dashData={dashData} dashLoading={dashLoading} loadDash={loadDash}/></div>
+          <div style={{display:activeTab==="Timeline"?"flex":"none",width:"100%",height:"100%"}}><TimelineTab timelineData={timelineData} timelineLoading={timelineLoading} runTimeline={runTimeline} activeRegion={activeRegion}/></div>
+          <div style={{display:activeTab==="Annotate"?"flex":"none",width:"100%",height:"100%"}}><AnnotateTab/></div>
+        </div>
 
-  saveMonitoringHistory(history);
-  saveAlerts(alertsData);
+        <div className="desktop-right" style={{background:PANEL,borderLeft:`1px solid ${BORDER}`,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+          <div style={{padding:"10px 12px",borderBottom:`1px solid ${BORDER}`,flexShrink:0}}>
+            <div style={{fontFamily:FH,fontSize:13,color:TEXT,fontWeight:"normal"}}>Intelligence Output</div>
+            <div style={{fontFamily:FB,fontSize:11,color:MUTED}}>{region?`${region} · ${layer.label}`:"Click any region on the map"}</div>
+          </div>
+          <div style={{flex:1,overflowY:"auto",padding:14}}>
+            {/* LIVE SATELLITE PANEL */}
+            {region&&(
+              <div style={{background:satData&&!satData._error&&satData.earth_engine_status==="CONNECTED — REAL SATELLITE DATA"?`${GREEN}08`:`${MUTED}08`,border:`1px solid ${satData&&!satData._error&&satData.earth_engine_status==="CONNECTED — REAL SATELLITE DATA"?GREEN+"33":BORDER}`,borderRadius:8,padding:"10px 12px",marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:satLoading||satData?6:0}}>
+                  <div style={{fontFamily:FM,fontSize:9,color:GREEN,letterSpacing:".08em",display:"flex",alignItems:"center",gap:5}}>
+                    <span style={{width:5,height:5,borderRadius:"50%",background:satLoading?AMBER:(satData&&satData.earth_engine_status==="CONNECTED — REAL SATELLITE DATA")?GREEN:MUTED,display:"inline-block",animation:satLoading?"blink 1s infinite":"none"}}/>
+                    LIVE SATELLITE — SENTINEL-2
+                  </div>
+                  {satData&&satData.satellite_date&&<span style={{fontFamily:FM,fontSize:9,color:CYAN}}>{satData.satellite_date}</span>}
+                </div>
+                {satLoading&&<div style={{fontFamily:FB,fontSize:11,color:MUTED}}>Querying Earth Engine for latest imagery...</div>}
+                {!satLoading&&satData&&satData._error&&<div style={{fontFamily:FB,fontSize:11,color:AMBER}}>Satellite check failed: {satData.message}</div>}
+                {!satLoading&&satData&&satData.earth_engine_status==="NOT CONNECTED"&&<div style={{fontFamily:FB,fontSize:11,color:MUTED}}>Earth Engine not connected — showing baseline data only</div>}
+                {!satLoading&&satData&&satData.earth_engine_status==="CONNECTED — REAL SATELLITE DATA"&&(
+                  <div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:6}}>
+                      <div style={{background:P2,borderRadius:6,padding:"6px 8px"}}>
+                        <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>NDVI (vegetation)</div>
+                        <div style={{fontFamily:FB,fontSize:13,fontWeight:700,color:satData.ndvi_mean>0.5?GREEN:satData.ndvi_mean>0.3?"#F5C842":RED}}>{satData.ndvi_mean}</div>
+                      </div>
+                      <div style={{background:P2,borderRadius:6,padding:"6px 8px"}}>
+                        <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>Degradation gap</div>
+                        <div style={{fontFamily:FB,fontSize:13,fontWeight:700,color:satData.degradation_gap>0.25?RED:GREEN}}>{satData.degradation_gap}</div>
+                      </div>
+                      <div style={{background:P2,borderRadius:6,padding:"6px 8px"}}>
+                        <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>Water area</div>
+                        <div style={{fontFamily:FB,fontSize:13,fontWeight:700,color:CYAN}}>{satData.water_fraction_pct}%</div>
+                      </div>
+                    </div>
+                    <div style={{fontFamily:FB,fontSize:11,color:satData.degradation_signal?.startsWith("YES")?AMBER:TEXT2,lineHeight:1.6}}>
+                      {satData.degradation_signal?.startsWith("YES")?"⚠ ":""}{satData.degradation_signal}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {/* LIVE DETECTION PANEL — shows when clicking map */}
+            {(liveDetectLoading||liveDetect)&&(
+              <div style={{background:`${PURPLE}08`,border:`1px solid ${PURPLE}33`,borderRadius:8,padding:"10px 12px",marginBottom:12}}>
+                <div style={{fontFamily:FM,fontSize:9,color:PURPLE,letterSpacing:".08em",marginBottom:6,display:"flex",alignItems:"center",gap:5}}>
+                  <span style={{width:5,height:5,borderRadius:"50%",background:liveDetectLoading?AMBER:PURPLE,display:"inline-block",animation:liveDetectLoading?"blink 1s infinite":"none"}}/>
+                  LIVE SATELLITE DETECTION ENGINE
+                  {liveDetect&&liveDetect.imagery&&<span style={{color:CYAN,marginLeft:6}}>{liveDetect.imagery.current_image_date}</span>}
+                </div>
+                {liveDetectLoading&&<div style={{fontFamily:FB,fontSize:11,color:MUTED}}>Running 7-index satellite analysis... (20-30 seconds)</div>}
+                {!liveDetectLoading&&liveDetect&&!liveDetect._error&&(
+                  <div>
+                    {/* Mining Detection */}
+                    <div style={{background:P2,borderRadius:7,padding:"8px 10px",marginBottom:8}}>
+                      <div style={{fontFamily:FM,fontSize:8,color:RED,marginBottom:4,letterSpacing:".06em"}}>⛏ MINING ACTIVITY DETECTION</div>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                        <div style={{fontFamily:FB,fontSize:18,fontWeight:700,color:liveDetect.mining_detection?.score>70?RED:liveDetect.mining_detection?.score>40?AMBER:GREEN}}>{liveDetect.mining_detection?.score}<span style={{fontSize:10,color:MUTED}}>/100</span></div>
+                        <Tag label={liveDetect.mining_detection?.level||'--'} color={SEV_C[liveDetect.mining_detection?.level]||MUTED}/>
+                      </div>
+                      <div style={{height:5,background:"rgba(255,255,255,.05)",borderRadius:3,overflow:"hidden",marginBottom:6}}>
+                        <div style={{height:"100%",width:`${liveDetect.mining_detection?.score||0}%`,background:liveDetect.mining_detection?.score>70?RED:liveDetect.mining_detection?.score>40?AMBER:GREEN,borderRadius:3}}/>
+                      </div>
+                      <div style={{fontFamily:FB,fontSize:11,color:TEXT2,lineHeight:1.5}}>{liveDetect.mining_detection?.classification}</div>
+                      {liveDetect.mining_detection?.new_clearing_ha>0&&(
+                        <div style={{fontFamily:FM,fontSize:9,color:AMBER,marginTop:4}}>
+                          New clearing since {liveDetect.imagery?.baseline_image_date}: <b>{liveDetect.mining_detection.new_clearing_ha} ha</b> · Forest loss: <b>{liveDetect.mining_detection.forest_loss_pct}%</b>
+                        </div>
+                      )}
+                    </div>
 
-  // Send email alerts to subscribers
-  if (newAlerts.length > 0) {
-    console.log(`  📧 Sending alerts to subscribers...`);
-    await sendAlertsToSubscribers(newAlerts);
-  }
+                    {/* Water Contamination */}
+                    <div style={{background:P2,borderRadius:7,padding:"8px 10px",marginBottom:8}}>
+                      <div style={{fontFamily:FM,fontSize:8,color:CYAN,marginBottom:4,letterSpacing:".06em"}}>WATER CONTAMINATION PROXY</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:6}}>
+                        <div>
+                          <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>Turbidity proxy</div>
+                          <div style={{fontFamily:FB,fontSize:12,fontWeight:700,color:liveDetect.water_contamination?.turbidity_proxy_ntu>200?RED:GREEN}}>{liveDetect.water_contamination?.turbidity_proxy_ntu} NTU</div>
+                        </div>
+                        <div>
+                          <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>Mercury proxy</div>
+                          <div style={{fontFamily:FB,fontSize:12,fontWeight:700,color:liveDetect.water_contamination?.mercury_proxy_mgl>0.01?RED:GREEN}}>{liveDetect.water_contamination?.mercury_proxy_mgl} mg/L</div>
+                        </div>
+                        <div>
+                          <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>× WHO limit</div>
+                          <div style={{fontFamily:FB,fontSize:12,fontWeight:700,color:liveDetect.water_contamination?.mercury_proxy_times_who>5?RED:GREEN}}>{liveDetect.water_contamination?.mercury_proxy_times_who}×</div>
+                        </div>
+                      </div>
+                      <div style={{fontFamily:FM,fontSize:8,color:AMBER}}>⚠ PROXY — Not a direct chemical measurement. Water testing required.</div>
+                    </div>
 
-  const summary = {
-    status: 'COMPLETED',
-    checked_at: checkDate,
-    regions_checked: regions.length,
-    regions_ok: Object.values(results).filter(r => r.status === 'OK').length,
-    regions_error: Object.values(results).filter(r => r.status === 'ERROR').length,
-    new_alerts: newAlerts.length,
-    critical_alerts: newAlerts.filter(a => a.severity === 'CRITICAL').length,
-    warning_alerts: newAlerts.filter(a => a.severity === 'WARNING').length,
-    alerts: newAlerts,
-    results,
-  };
+                    {/* Health Risk */}
+                    <div style={{background:P2,borderRadius:7,padding:"8px 10px",marginBottom:8}}>
+                      <div style={{fontFamily:FM,fontSize:8,color:GREEN,marginBottom:4,letterSpacing:".06em"}}> HEALTH RISK FROM SATELLITE</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                        <div>
+                          <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>Outbreak probability</div>
+                          <div style={{fontFamily:FB,fontSize:14,fontWeight:700,color:liveDetect.health_risk?.outbreak_probability_30days_pct>50?RED:AMBER}}>{liveDetect.health_risk?.outbreak_probability_30days_pct}%</div>
+                        </div>
+                        <div>
+                          <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>Neurological risk</div>
+                          <div style={{fontFamily:FB,fontSize:14,fontWeight:700,color:liveDetect.health_risk?.neurological_risk_pct>50?RED:GREEN}}>{liveDetect.health_risk?.neurological_risk_pct}%</div>
+                        </div>
+                      </div>
+                    </div>
 
-  console.log(`\n  ✓ Monitoring check complete: ${regions.length} regions checked, ${newAlerts.length} alerts generated`);
-  console.log('  ═══════════════════════════════════════\n');
+                    {/* Change period */}
+                    <div style={{fontFamily:FM,fontSize:9,color:MUTED,lineHeight:1.6}}>
+                      Change detection: <span style={{color:CYAN}}>{liveDetect.imagery?.baseline_image_date}</span> → <span style={{color:CYAN}}>{liveDetect.imagery?.current_image_date}</span><br/>
+                      Indices used: BSI, MNDWI, Iron Oxide Ratio, Clay Mineral Ratio, NDVI Change<br/>
+                      <span style={{color:GREEN}}>All calculated live from Sentinel-2 satellite pixels</span>
+                    </div>
 
-  return summary;
-}
+                    {/* Actions */}
+                    {liveDetect.what_to_do_next&&(
+                      <div style={{marginTop:8}}>
+                        <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:6,letterSpacing:".06em"}}>RECOMMENDED ACTIONS</div>
+                        {liveDetect.what_to_do_next.map((a,i)=>(
+                          <div key={i} style={{display:"flex",gap:7,padding:"5px 8px",background:BG,borderRadius:5,marginBottom:4}}>
+                            <span style={{color:CYAN,flexShrink:0,fontSize:10}}>→</span>
+                            <span style={{fontFamily:FB,fontSize:10,color:TEXT2,lineHeight:1.5}}>{a}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!liveDetectLoading&&liveDetect&&liveDetect._error&&(
+                  <div style={{fontFamily:FB,fontSize:11,color:AMBER}}>Detection error: {liveDetect._error}</div>
+                )}
+              </div>
+            )}
+            {loading&&<Spinner label={"Analysing "+(region||"region")+"..."}/>}
+            {!loading&&!prediction&&(
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:250,gap:12,textAlign:"center",padding:16}}>
+                <div style={{fontSize:40,opacity:.15}}>️</div>
+                <div style={{fontFamily:FH,fontSize:16,color:"rgba(216,232,255,.3)",fontWeight:"normal"}}>Select a region</div>
+              </div>
+            )}
+            {!loading&&prediction&&!prediction._error&&(
+              <div>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>
+                  <Tag label={prediction.severity} color={SEV_C[prediction.severity]} bg={SEV_BG[prediction.severity]}/>
+                  <Tag label={prediction.confidence} color={CYAN}/>
+                </div>
+                <div style={{fontFamily:FH,fontSize:16,lineHeight:1.35,marginBottom:5,color:TEXT,fontWeight:"normal"}}>{prediction.title}</div>
+                <div style={{fontFamily:FB,fontSize:12,color:TEXT2,marginBottom:12,lineHeight:1.65}}>{prediction.subtitle}</div>
+                <div style={{fontFamily:FB,fontSize:12,color:TEXT,lineHeight:1.8,marginBottom:12,padding:"10px 12px",background:P2,borderRadius:7,borderLeft:`3px solid ${CYAN}`}}>{prediction.analysis}</div>
+                <Label text="KEY FINDINGS"/>
+                {(prediction.findings||[]).map((f,i)=>(
+                  <div key={i} style={{display:"flex",gap:8,padding:"7px 10px",background:P2,borderRadius:6,marginBottom:5}}>
+                    <div style={{width:6,height:6,borderRadius:"50%",flexShrink:0,marginTop:4,background:{critical:RED,high:AMBER,medium:"#F5C842",low:GREEN}[f.severity]||CYAN}}/>
+                    <div style={{fontFamily:FB,fontSize:12,color:TEXT,lineHeight:1.6}}>{f.text}</div>
+                  </div>
+                ))}
+                {prediction.roleSpecificInsight&&(
+                  <div style={{background:`${role.color}0a`,border:`1px solid ${role.color}22`,borderRadius:7,padding:"9px 11px",marginTop:10}}>
+                    <Label text={`FOR ${role.label.toUpperCase()}`} color={role.color}/>
+                    <div style={{fontFamily:FB,fontSize:12,color:TEXT,lineHeight:1.7}}>{prediction.roleSpecificInsight}</div>
+                  </div>
+                )}
+                <Label text="RECOMMENDED ACTIONS"/>
+                {(prediction.immediateActions||[]).map((a,i)=>(
+                  <div key={i} style={{padding:"7px 10px",borderRadius:6,border:`1px solid ${BORDER}`,background:P2,color:TEXT,fontSize:12,fontFamily:FB,marginBottom:5,display:"flex",alignItems:"flex-start",gap:8}}>
+                    <span>{["","",""][i]}</span>{a}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={{borderTop:`1px solid ${BORDER}`,padding:"8px 10px",flexShrink:0}}>
+            <Label text="CUSTOM QUERY"/>
+            <div style={{display:"flex",gap:6}}>
+              <input value={customQ} onChange={e=>setCustomQ(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&customQ.trim()){runPrediction(region||"Ghana",layer,role,customQ);setCustomQ("");}}} placeholder="Ask anything..." style={{flex:1,background:P2,border:`1px solid ${BORDER}`,borderRadius:6,padding:"7px 9px",color:TEXT,fontSize:12,outline:"none",fontFamily:FB}}/>
+              <button onClick={()=>{if(customQ.trim()){runPrediction(region||"Ghana",layer,role,customQ);setCustomQ("");}}} style={{background:`linear-gradient(135deg,${CYAN},#0099BB)`,border:"none",borderRadius:6,padding:"7px 12px",color:BG,fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:FB}}>Ask</button>
+            </div>
+          </div>
+        </div>
+      </div>
 
-// Schedule monitoring — check every 30 days automatically
-function scheduleMonitoring() {
-  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+      {/* MOBILE BOTTOM PANEL — Map tab only */}
+      {activeTab==="Map"&&(
+      <div className="mobile-bottom">
+        {/* Search bar */}
+        <div style={{padding:"8px 10px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:6}}>
+          <input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search town or region..."
+            style={{flex:1,background:P2,border:`1px solid ${CYAN}33`,borderRadius:6,padding:"7px 10px",color:TEXT,fontSize:13,outline:"none",fontFamily:FB}}/>
+          <button onClick={()=>{const q=searchQuery.toLowerCase();const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));const reg=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));if(town){setMapCenter([town.lat,town.lng,13]);handleCoordClick(town.lat,town.lng,town.name);}else if(reg){setMapCenter([reg[1].lat,reg[1].lng,10]);handleRegionClick(reg[0]);}}}
+            style={{background:CYAN,border:"none",borderRadius:6,padding:"7px 14px",color:BG,fontSize:13,fontWeight:700,cursor:"pointer"}}>Go</button>
+        </div>
 
-  // Check if we should run now (30 days since last run)
-  const history = loadMonitoringHistory();
-  if (history.last_run) {
-    const lastRun = new Date(history.last_run);
-    const now = new Date();
-    const daysSinceLastRun = Math.floor((now - lastRun) / (1000 * 60 * 60 * 24));
-    console.log(`  📡 Monitoring: Last run ${daysSinceLastRun} days ago`);
-    if (daysSinceLastRun < 30) {
-      console.log(`  📡 Next monitoring check in ${30 - daysSinceLastRun} days`);
-    }
-  }
+        {/* Region buttons */}
+        <div style={{padding:"8px 10px",borderBottom:`1px solid ${BORDER}`}}>
+          <div style={{fontFamily:FM,fontSize:9,color:MUTED,marginBottom:5,letterSpacing:".06em",textTransform:"uppercase"}}>Tap Region</div>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+            {REGIONS.map(r=>(
+              <button key={r.name} onClick={()=>handleRegionClick(r.name)}
+                style={{padding:"5px 9px",borderRadius:5,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}15`:"transparent",color:activeRegion===r.name?CYAN:MUTED,fontSize:11,fontFamily:FB,cursor:"pointer"}}>
+                {r.name.replace(' Region','')}
+              </button>
+            ))}
+          </div>
+        </div>
 
-  // Schedule automatic runs every 30 days
-  setInterval(async () => {
-    console.log('\n  📡 Automatic 30-day monitoring check triggered...');
-    await runFullMonitoringCheck();
-  }, THIRTY_DAYS_MS);
+        {/* Live detection */}
+        {liveDetectLoading&&<div style={{padding:"12px 10px",display:"flex",alignItems:"center",gap:8}}><span style={{width:6,height:6,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/><span style={{fontFamily:FB,fontSize:12,color:MUTED}}>Running satellite detection... 20-30 seconds</span></div>}
+        {!liveDetectLoading&&liveDetect&&!liveDetect._error&&(
+          <div style={{padding:"10px 12px",borderBottom:`1px solid ${BORDER}`}}>
+            <div style={{fontFamily:FM,fontSize:9,color:PURPLE,marginBottom:8,letterSpacing:".06em"}}>LIVE DETECTION · {liveDetect.imagery?.current_image_date} · {liveDetect.location}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:8}}>
+              {[["Mining Score",liveDetect.mining_detection?.score,"/100",liveDetect.mining_detection?.score>70?RED:liveDetect.mining_detection?.score>40?AMBER:GREEN],["Mercury Proxy",liveDetect.water_contamination?.mercury_proxy_mgl,"mg/L",liveDetect.water_contamination?.mercury_proxy_mgl>0.01?RED:GREEN],["Outbreak Risk",liveDetect.health_risk?.outbreak_probability_30days_pct,"%",liveDetect.health_risk?.outbreak_probability_30days_pct>50?RED:AMBER]].map(([label,val,unit,col])=>(
+                <div key={label} style={{background:P2,borderRadius:6,padding:"7px 8px",textAlign:"center"}}>
+                  <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:2}}>{label}</div>
+                  <div style={{fontFamily:FB,fontSize:16,fontWeight:700,color:col}}>{val}</div>
+                  <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>{unit}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{fontFamily:FB,fontSize:11,color:TEXT2,lineHeight:1.5}}>{liveDetect.mining_detection?.classification}</div>
+          </div>
+        )}
 
-  console.log('  ✓ 30-day monitoring scheduler active');
-}
+        {/* Prediction */}
+        {loading&&<div style={{padding:12}}><Spinner label="Analysing..."/></div>}
+        {!loading&&prediction&&!prediction._error&&(
+          <div style={{padding:"10px 12px"}}>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>
+              <Tag label={prediction.severity} color={SEV_C[prediction.severity]} bg={SEV_BG[prediction.severity]}/>
+              <Tag label={prediction.confidence} color={CYAN}/>
+            </div>
+            <div style={{fontFamily:FH,fontSize:14,color:TEXT,marginBottom:6,fontWeight:"normal",lineHeight:1.4}}>{prediction.title}</div>
+            <div style={{fontFamily:FB,fontSize:11,color:TEXT,lineHeight:1.7,padding:"8px 10px",background:P2,borderRadius:7,borderLeft:`3px solid ${CYAN}`,marginBottom:8}}>{prediction.analysis}</div>
+            {(prediction.findings||[]).slice(0,2).map((f,i)=>(
+              <div key={i} style={{display:"flex",gap:8,padding:"6px 10px",background:P2,borderRadius:6,marginBottom:5}}>
+                <div style={{width:6,height:6,borderRadius:"50%",flexShrink:0,marginTop:4,background:{critical:RED,high:AMBER,medium:"#F5C842",low:GREEN}[f.severity]||CYAN}}/>
+                <div style={{fontFamily:FB,fontSize:11,color:TEXT,lineHeight:1.6}}>{f.text}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        {!loading&&!prediction&&!liveDetect&&(
+          <div style={{padding:"20px 12px",textAlign:"center"}}>
+            <div style={{fontFamily:FB,fontSize:13,color:MUTED,marginBottom:4}}>Tap a region or anywhere on the map</div>
+            <div style={{fontFamily:FM,fontSize:10,color:MUTED}}>Live satellite analysis will appear here</div>
+          </div>
+        )}
+        <div style={{height:20}}/>
+      </div>
+      )}
 
-// ── MONITORING API ENDPOINTS ──
+      {/* MOBILE NON-MAP TABS — full screen content */}
+      {activeTab!=="Map"&&(
+      <div className="mobile-fullscreen-tab">
+        <style>{`@media(max-width:768px){.mobile-fullscreen-tab{display:flex!important;position:fixed;top:46px;left:0;right:0;bottom:0;z-index:500;background:#040D1A;overflow-y:auto;-webkit-overflow-scrolling:touch;flex-direction:column;}} @media(min-width:769px){.mobile-fullscreen-tab{display:none!important;}}`}</style>
+        {activeTab==="Intelligence"&&<IntelligenceTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} diseaseData={diseaseData} diseaseLoading={diseaseLoading} runDisease={runDisease} riskData={riskData} riskLoading={riskLoading} runRisk={runRisk} scData={scData} scLoading={scLoading} scScenario={scScenario} setScScenario={setScScenario} scIntensity={scIntensity} setScIntensity={setScIntensity} scRegion={scRegion} setScRegion={setScRegion} runScenario={runScenario} airData={airData} airLoading={airLoading} runAir={runAir} insuranceData={insuranceData} insuranceLoading={insuranceLoading} runInsurance={runInsurance} damData={damData} damLoading={damLoading} runDam={runDam}/>}
+        {activeTab==="Quantum"&&<QuantumHubTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} qData={qData} qLoading={qLoading} qType={qType} setQType={setQType} runQuantum={runQuantum} criminalData={criminalData} criminalLoading={criminalLoading} runCriminal={runCriminal}/>}
+        {activeTab==="Legal & Evidence"&&<LawyerTab lawyerData={lawyerData} lawyerLoading={lawyerLoading} runLawyer={runLawyer}/>}
+        {activeTab==="Monitoring"&&<MonitoringTab monitorData={monitorData} monitorLoading={monitorLoading} runMonitor={runMonitor} dashData={dashData} dashLoading={dashLoading} loadDash={loadDash}/>}
+        {activeTab==="Timeline"&&<TimelineTab timelineData={timelineData} timelineLoading={timelineLoading} runTimeline={runTimeline} activeRegion={activeRegion}/>}
+        {activeTab==="Annotate"&&<AnnotateTab/>}
+      </div>
+      )}
 
-// Run a full monitoring check now (manual trigger)
-app.post('/monitoring/run', async (req, res) => {
-  const { secret } = req.body;
-  // Basic protection — require a trigger key
-  if (secret !== 'qgif-monitor-2026') {
-    return res.status(401).json({ error: 'Invalid monitoring key' });
-  }
-  try {
-    const summary = await runFullMonitoringCheck();
-    res.json(summary);
-  } catch(e) {
-    res.json({ status: 'ERROR', message: e.message });
-  }
-});
 
-// Get monitoring history for all regions
-app.get('/monitoring/history', (req, res) => {
-  const history = loadMonitoringHistory();
-  const alerts = loadAlerts();
-  res.json({
-    last_run: history.last_run,
-    total_runs: history.total_runs,
-    regions: Object.entries(history.regions).map(([name, data]) => ({
-      region: name,
-      latest: data.latest,
-      total_readings: data.readings.length,
-      trend: data.readings.length >= 2 ? (() => {
-        const readings = data.readings.filter(r => r.status === 'OK');
-        if (readings.length < 2) return 'INSUFFICIENT DATA';
-        const first = readings[0].degradation_gap || 0;
-        const last = readings[readings.length - 1].degradation_gap || 0;
-        const change = last - first;
-        return change > 0.05 ? 'WORSENING' : change < -0.05 ? 'IMPROVING' : 'STABLE';
-      })() : 'FIRST READING',
-      readings: data.readings,
-    })),
-    recent_alerts: alerts.alerts.slice(0, 20),
-    total_alerts: alerts.total_alerts,
-  });
-});
-
-// Get alerts only
-app.get('/monitoring/alerts', (req, res) => {
-  const alerts = loadAlerts();
-  const { severity, region, limit } = req.query;
-  let filtered = alerts.alerts;
-  if (severity) filtered = filtered.filter(a => a.severity === severity.toUpperCase());
-  if (region) filtered = filtered.filter(a => a.region.toLowerCase().includes(region.toLowerCase()));
-  const lim = parseInt(limit) || 50;
-  res.json({
-    alerts: filtered.slice(0, lim),
-    total: alerts.total_alerts,
-    filters_applied: { severity: severity || 'all', region: region || 'all', limit: lim },
-  });
-});
-
-// Get history for a single region
-app.get('/monitoring/region/:name', (req, res) => {
-  const history = loadMonitoringHistory();
-  const regionName = decodeURIComponent(req.params.name);
-  const regionHistory = history.regions[regionName];
-  if (!regionHistory) {
-    return res.json({ region: regionName, message: 'No monitoring data yet. Run /monitoring/run first.', readings: [] });
-  }
-  const readings = regionHistory.readings.filter(r => r.status === 'OK');
-  res.json({
-    region: regionName,
-    latest: regionHistory.latest,
-    total_readings: readings.length,
-    readings,
-    trend: readings.length >= 2 ? {
-      first_gap: readings[0].degradation_gap,
-      latest_gap: readings[readings.length - 1].degradation_gap,
-      total_change: Math.round((readings[readings.length-1].degradation_gap - readings[0].degradation_gap) * 1000) / 1000,
-      direction: readings[readings.length-1].degradation_gap > readings[0].degradation_gap ? 'WORSENING' : 'IMPROVING',
-      first_date: readings[0].checked_at?.split('T')[0],
-      latest_date: readings[readings.length-1].checked_at?.split('T')[0],
-    } : null,
-  });
-});
-
-// Register for alerts (email)
-app.post('/monitoring/register', (req, res) => {
-  const { email, regions, severity_threshold, name, organisation } = req.body;
-  if (!email) return res.status(400).json({ error: 'Email is required' });
-
-  const SUBSCRIBERS_FILE = path.join(__dirname, 'monitoring_subscribers.json');
-  let subscribers = { subscribers: [] };
-  try {
-    if (fs.existsSync(SUBSCRIBERS_FILE)) {
-      subscribers = JSON.parse(fs.readFileSync(SUBSCRIBERS_FILE, 'utf8'));
-    }
-  } catch(e) {}
-
-  // Check if already registered
-  const existing = subscribers.subscribers.find(s => s.email === email);
-  if (existing) {
-    Object.assign(existing, { regions: regions || ['all'], severity_threshold: severity_threshold || 'WARNING', name, organisation, updated_at: new Date().toISOString() });
-    fs.writeFileSync(SUBSCRIBERS_FILE, JSON.stringify(subscribers, null, 2));
-    return res.json({ status: 'UPDATED', message: `Alert preferences updated for ${email}` });
-  }
-
-  subscribers.subscribers.push({
-    id: `SUB-${Date.now()}`,
-    email,
-    name: name || 'Unknown',
-    organisation: organisation || 'Unknown',
-    regions: regions || ['all'],
-    severity_threshold: severity_threshold || 'WARNING', // WARNING, CRITICAL, or ALL
-    registered_at: new Date().toISOString(),
-    active: true,
-  });
-
-  fs.writeFileSync(SUBSCRIBERS_FILE, JSON.stringify(subscribers, null, 2));
-  res.json({
-    status: 'REGISTERED',
-    message: `Successfully registered ${email} for QGIF monitoring alerts`,
-    alert_regions: regions || ['All 12 Ghana regions'],
-    alert_threshold: severity_threshold || 'WARNING and above',
-    next_check: (() => {
-      const history = loadMonitoringHistory();
-      if (history.last_run) {
-        const next = new Date(history.last_run);
-        next.setDate(next.getDate() + 30);
-        return next.toISOString().split('T')[0];
-      }
-      return 'Within 30 days';
-    })(),
-  });
-});
-
-// Get monitoring dashboard summary
-app.get('/monitoring/dashboard', (req, res) => {
-  const history = loadMonitoringHistory();
-  const alerts = loadAlerts();
-
-  const regions = Object.entries(history.regions).map(([name, data]) => {
-    const readings = (data.readings || []).filter(r => r.status === 'OK');
-    const latest = data.latest;
-    return {
-      region: name,
-      latest_gap: latest?.degradation_gap || null,
-      latest_mining_score: latest?.mining_score || null,
-      latest_threat_level: latest?.threat_level || null,
-      last_checked: latest?.checked_at?.split('T')[0] || null,
-      satellite_date: latest?.satellite_date || null,
-      readings_count: readings.length,
-      status: latest?.status || 'NO DATA',
-    };
-  });
-
-  const recentCritical = alerts.alerts.filter(a => a.severity === 'CRITICAL').slice(0, 5);
-  const recentWarnings = alerts.alerts.filter(a => a.severity === 'WARNING').slice(0, 10);
-
-  res.json({
-    system_status: EE_READY ? 'ACTIVE — Earth Engine Connected' : 'DEGRADED — Earth Engine Offline',
-    last_full_check: history.last_run ? history.last_run.split('T')[0] : 'Never',
-    total_monitoring_runs: history.total_runs || 0,
-    regions_monitored: regions.length,
-    total_alerts_ever: alerts.total_alerts,
-    active_critical_alerts: recentCritical.length,
-    active_warning_alerts: recentWarnings.length,
-    regions,
-    recent_critical_alerts: recentCritical,
-    recent_warnings: recentWarnings,
-    next_scheduled_check: (() => {
-      if (!history.last_run) return 'Run /monitoring/run to start';
-      const next = new Date(history.last_run);
-      next.setDate(next.getDate() + 30);
-      return next.toISOString().split('T')[0];
-    })(),
-  });
-});
-
-// Initialize monitoring scheduler after Earth Engine connects
-setTimeout(() => {
-  if (EE_READY) scheduleMonitoring();
-  else {
-    // Wait for EE to be ready then start scheduler
-    const checkEE = setInterval(() => {
-      if (EE_READY) {
-        clearInterval(checkEE);
-        scheduleMonitoring();
-      }
-    }, 5000);
-  }
-}, 10000);
-
-// ============================================================
-// EMAIL ALERT SYSTEM — Nodemailer + Gmail
-// ============================================================
-
-const nodemailer = require('nodemailer');
-
-function createTransporter() {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
-    console.log('  ⚠ Email alerts disabled — GMAIL_USER or GMAIL_PASS not set');
-    return null;
-  }
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_PASS,
-    },
-  });
-}
-
-function getSeverityEmoji(severity) {
-  return { CRITICAL: '🔴', WARNING: '🟠', WATCH: '🟡', IMPROVEMENT: '🟢', INFO: '🔵' }[severity] || '⚪';
-}
-
-async function sendAlertEmail(subscriber, alerts) {
-  const transporter = createTransporter();
-  if (!transporter) return false;
-
-  const criticalAlerts = alerts.filter(a => a.severity === 'CRITICAL');
-  const warningAlerts = alerts.filter(a => a.severity === 'WARNING');
-  const watchAlerts = alerts.filter(a => a.severity === 'WATCH');
-  const improvementAlerts = alerts.filter(a => a.severity === 'IMPROVEMENT');
-
-  const subject = criticalAlerts.length > 0
-    ? `🔴 CRITICAL — QGIF Alert: New illegal mining detected in ${criticalAlerts[0].region}`
-    : warningAlerts.length > 0
-    ? `🟠 WARNING — QGIF Alert: Environmental disturbance in ${warningAlerts[0].region}`
-    : `🟡 QGIF Monitoring Update — ${alerts.length} region(s) flagged`;
-
-  const alertRows = alerts.map(a => `
-    <tr>
-      <td style="padding:10px;border-bottom:1px solid #eee;">
-        <strong style="color:${a.severity==='CRITICAL'?'#CC2222':a.severity==='WARNING'?'#CC6600':a.severity==='IMPROVEMENT'?'#00875A':'#333'}">${getSeverityEmoji(a.severity)} ${a.severity}</strong>
-      </td>
-      <td style="padding:10px;border-bottom:1px solid #eee;"><strong>${a.region}</strong></td>
-      <td style="padding:10px;border-bottom:1px solid #eee;">${a.previous_gap} → ${a.current_gap} (${a.gap_change > 0 ? '+' : ''}${a.gap_change})</td>
-      <td style="padding:10px;border-bottom:1px solid #eee;">${a.previous_mining_score} → ${a.current_mining_score}</td>
-      <td style="padding:10px;border-bottom:1px solid #eee;font-size:12px;">${a.satellite_date}</td>
-    </tr>
-  `).join('');
-
-  const html = `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f5f7fa;font-family:Arial,sans-serif;">
-  <div style="max-width:680px;margin:0 auto;background:white;border-radius:12px;overflow:hidden;margin-top:20px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
-
-    <!-- Header -->
-    <div style="background:linear-gradient(135deg,#1A3A6B,#0099BB);padding:28px 32px;text-align:center;">
-      <div style="font-size:36px;margin-bottom:8px;">⚛</div>
-      <h1 style="color:white;margin:0;font-size:22px;letter-spacing:1px;">QGIF MONITORING ALERT</h1>
-      <p style="color:rgba(255,255,255,0.8);margin:8px 0 0;font-size:13px;">Quantum Geospatial Intelligence Framework — Ghana</p>
+      {showRoleModal&&(
+        <div onClick={()=>setShowRoleModal(false)} style={{position:"fixed",inset:0,background:"rgba(3,10,20,.9)",backdropFilter:"blur(12px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:PANEL,border:`1px solid ${BORDER}`,borderRadius:14,padding:24,width:580,maxWidth:"95vw",position:"relative"}}>
+            <button onClick={()=>setShowRoleModal(false)} style={{position:"absolute",top:12,right:12,background:"transparent",border:"none",color:MUTED,fontSize:18,cursor:"pointer"}}>✕</button>
+            <div style={{fontFamily:FH,fontSize:18,marginBottom:5,color:TEXT,fontWeight:"normal"}}>Select Your Role</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:18}}>
+              {ROLES.map(r=>(
+                <div key={r.key} onClick={()=>handleRoleSelect(r)} style={{background:role.key===r.key?`${CYAN}0e`:P2,border:`1px solid ${role.key===r.key?CYAN:BORDER}`,borderRadius:10,padding:14,cursor:"pointer"}}>
+                  <div style={{fontSize:22,marginBottom:7}}>{r.icon}</div>
+                  <div style={{fontFamily:FH,fontSize:13,marginBottom:4,color:TEXT,fontWeight:"normal"}}>{r.label}</div>
+                  <div style={{fontFamily:FB,fontSize:10,color:MUTED,lineHeight:1.5}}>{r.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-
-    <!-- Alert Summary -->
-    <div style="padding:24px 32px;background:#f8f9ff;border-bottom:1px solid #e0e8ff;">
-      <p style="margin:0;font-size:15px;color:#333;">Dear ${subscriber.name || 'QGIF Subscriber'},</p>
-      <p style="margin:12px 0 0;font-size:14px;color:#555;line-height:1.7;">
-        The QGIF automated satellite monitoring system completed its scheduled check on <strong>${new Date().toISOString().split('T')[0]}</strong> 
-        and detected <strong>${alerts.length} environmental change(s)</strong> across Ghana's regions that meet your alert threshold.
-      </p>
-      ${criticalAlerts.length > 0 ? `
-      <div style="background:#FDE8E8;border:1px solid #CC2222;border-radius:8px;padding:12px 16px;margin-top:16px;">
-        <strong style="color:#CC2222;">🔴 ${criticalAlerts.length} CRITICAL alert(s) require immediate attention</strong>
-        <p style="margin:6px 0 0;color:#CC2222;font-size:13px;">${criticalAlerts.map(a => a.region).join(', ')} — Significant new land disturbance detected. EPA field verification recommended immediately.</p>
-      </div>` : ''}
-      ${warningAlerts.length > 0 ? `
-      <div style="background:#FFF3E0;border:1px solid #CC6600;border-radius:8px;padding:12px 16px;margin-top:12px;">
-        <strong style="color:#CC6600;">🟠 ${warningAlerts.length} WARNING alert(s) — EPA field visit recommended within 7 days</strong>
-      </div>` : ''}
-    </div>
-
-    <!-- Alert Table -->
-    <div style="padding:24px 32px;">
-      <h2 style="color:#1A3A6B;font-size:16px;margin:0 0 16px;">Detailed Alert Report</h2>
-      <table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <thead>
-          <tr style="background:#1A3A6B;color:white;">
-            <th style="padding:10px;text-align:left;">Severity</th>
-            <th style="padding:10px;text-align:left;">Region</th>
-            <th style="padding:10px;text-align:left;">Degradation Gap</th>
-            <th style="padding:10px;text-align:left;">Mining Score</th>
-            <th style="padding:10px;text-align:left;">Satellite Date</th>
-          </tr>
-        </thead>
-        <tbody>${alertRows}</tbody>
-      </table>
-    </div>
-
-    <!-- Alert Messages -->
-    <div style="padding:0 32px 24px;">
-      <h2 style="color:#1A3A6B;font-size:16px;margin:0 0 16px;">What The Satellite Found</h2>
-      ${alerts.map(a => `
-      <div style="background:#f8f9ff;border-left:4px solid ${a.severity==='CRITICAL'?'#CC2222':a.severity==='WARNING'?'#CC6600':a.severity==='IMPROVEMENT'?'#00875A':'#0099BB'};border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:12px;">
-        <div style="font-weight:bold;color:#333;margin-bottom:6px;">${getSeverityEmoji(a.severity)} ${a.region}</div>
-        <div style="font-size:13px;color:#555;line-height:1.6;margin-bottom:8px;">${a.message}</div>
-        <div style="font-size:12px;color:#0099BB;font-weight:bold;">→ ${a.recommended_action}</div>
-      </div>`).join('')}
-    </div>
-
-    <!-- Methodology Note -->
-    <div style="padding:16px 32px;background:#f0f4ff;border-top:1px solid #e0e8ff;">
-      <p style="margin:0;font-size:12px;color:#666;line-height:1.7;">
-        <strong>Data Source:</strong> ESA Sentinel-2 satellite imagery via Google Earth Engine (Project: quantum-geospatial). 
-        All values calculated from live spectral indices (NDVI, BSI, MNDWI, Iron Oxide Ratio, Clay Mineral Ratio). 
-        Mercury and contamination values are satellite-derived proxies, not direct chemical measurements. 
-        Field verification recommended for all alerts above WATCH level.
-      </p>
-    </div>
-
-    <!-- CTA -->
-    <div style="padding:20px 32px;text-align:center;background:white;">
-      <a href="https://qgif.vercel.app" style="display:inline-block;background:linear-gradient(135deg,#1A3A6B,#0099BB);color:white;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:bold;font-size:14px;">
-        View Full Analysis on QGIF →
-      </a>
-      <p style="margin:16px 0 0;font-size:11px;color:#999;">
-        You are receiving this because you registered at qgif.vercel.app.<br>
-        Organisation: ${subscriber.organisation || 'Not specified'} | Threshold: ${subscriber.severity_threshold || 'WARNING'}+<br>
-        Next scheduled check: 30 days from today.
-      </p>
-    </div>
-
-  </div>
-</body>
-</html>`;
-
-  try {
-    await transporter.sendMail({
-      from: `"QGIF Monitoring System" <${process.env.GMAIL_USER}>`,
-      to: subscriber.email,
-      subject,
-      html,
-    });
-    console.log(`  ✓ Alert email sent to ${subscriber.email}`);
-    return true;
-  } catch (e) {
-    console.log(`  ⚠ Failed to send email to ${subscriber.email}:`, e.message);
-    return false;
-  }
+  );
 }
-
-async function sendAlertsToSubscribers(newAlerts) {
-  if (!newAlerts || newAlerts.length === 0) return;
-
-  const SUBSCRIBERS_FILE = path.join(__dirname, 'monitoring_subscribers.json');
-  let subscribersData = { subscribers: [] };
-  try {
-    if (fs.existsSync(SUBSCRIBERS_FILE)) {
-      subscribersData = JSON.parse(fs.readFileSync(SUBSCRIBERS_FILE, 'utf8'));
-    }
-  } catch(e) { return; }
-
-  const activeSubscribers = subscribersData.subscribers.filter(s => s.active);
-  if (activeSubscribers.length === 0) {
-    console.log('  ℹ No active subscribers to notify');
-    return;
-  }
-
-  const severityRank = { CRITICAL: 4, WARNING: 3, WATCH: 2, IMPROVEMENT: 1, INFO: 0 };
-
-  for (const subscriber of activeSubscribers) {
-    const threshold = subscriber.severity_threshold || 'WARNING';
-    const thresholdRank = severityRank[threshold] || 2;
-
-    // Filter alerts by subscriber's region preferences and severity threshold
-    const relevantAlerts = newAlerts.filter(alert => {
-      const meetsThreshold = (severityRank[alert.severity] || 0) >= thresholdRank;
-      const meetsRegion = !subscriber.regions || subscriber.regions.includes('all') ||
-        subscriber.regions.some(r => alert.region.toLowerCase().includes(r.toLowerCase()));
-      return meetsThreshold && meetsRegion;
-    });
-
-    if (relevantAlerts.length > 0) {
-      await sendAlertEmail(subscriber, relevantAlerts);
-    }
-  }
-}
-
-// Test email endpoint
-app.post('/monitoring/test-email', async (req, res) => {
-  const { email, secret } = req.body;
-  if (secret !== 'qgif-monitor-2026') return res.status(401).json({ error: 'Invalid key' });
-  if (!email) return res.status(400).json({ error: 'Email required' });
-
-  const transporter = createTransporter();
-  if (!transporter) return res.json({ status: 'ERROR', message: 'Gmail credentials not configured on server' });
-
-  const testAlert = {
-    severity: 'WARNING',
-    region: 'Western Region',
-    message: 'TEST ALERT — This is a test of the QGIF monitoring alert system. In a real alert, this would contain satellite-detected environmental changes.',
-    recommended_action: 'No action needed — this is a test',
-    previous_gap: 0.380,
-    current_gap: 0.444,
-    gap_change: 0.064,
-    previous_mining_score: 55,
-    current_mining_score: 73,
-    satellite_date: new Date().toISOString().split('T')[0],
-  };
-
-  const testSubscriber = { email, name: 'Test User', organisation: 'QGIF Test', severity_threshold: 'WARNING' };
-
-  try {
-    const sent = await sendAlertEmail(testSubscriber, [testAlert]);
-    res.json({ status: sent ? 'SENT' : 'FAILED', message: sent ? `Test email sent to ${email}` : 'Failed to send — check Gmail credentials' });
-  } catch(e) {
-    res.json({ status: 'ERROR', message: e.message });
-  }
-});
-
-app.listen(5000, () => {
-  console.log('');
-  console.log('  QGIF Intelligence Server v6.0');
-  console.log('  Running at http://localhost:5000');
-  console.log('  ');
-  console.log('  FEATURES ACTIVE:');
-  console.log('  ✓ 6 Real Prediction Models');
-  console.log('  ✓ Digital Lawyer — Evidence Generator');
-  console.log('  ✓ Tailings Dam Collapse Predictor');
-  console.log('  ✓ Parametric Crop Insurance');
-  console.log('  ✓ Air Quality Alert System');
-  console.log('  ✓ Criminal Network Intelligence');
-  console.log('  ✓ 30-Day Autonomous Monitoring System');
-  console.log('  ✓ Satellite-Based Live Detection (BSI + IOR + MNDWI + Change Detection)');
-  console.log('  ✓ Scenario Simulator');
-  console.log('  ');
-  console.log('  Nothing is hardcoded. Every output is calculated.');
-  console.log('');
-});

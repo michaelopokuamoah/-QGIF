@@ -1668,7 +1668,7 @@ function AnnotateTab(){
             {LABELS.map(l=>(
               <button key={l.key} onClick={()=>handleLabel(l.key)}
                 disabled={loading||!currentData}
-                style={{flex:1,minWidth:100,padding:"12px 8px",borderRadius:7,border:`2px solid ${l.color}`,background:`${l.color}12`,color:l.color,fontSize:13,fontWeight:700,cursor:loading||!currentData?"not-allowed":"pointer",fontFamily:"Inter,'Segoe UI',sans-serif",transition:"all .15s",opacity:loading||!currentData?.0.5:1}}>
+                style={{flex:1,minWidth:100,padding:"12px 8px",borderRadius:7,border:`2px solid ${l.color}`,background:`${l.color}12`,color:l.color,fontSize:13,fontWeight:700,cursor:loading||!currentData?"not-allowed":"pointer",fontFamily:"Inter,'Segoe UI',sans-serif",transition:"all .15s",opacity:loading||!currentData?0.5:1}}>
                 {l.label}
                 <div style={{fontSize:10,fontWeight:400,opacity:.8,marginTop:2}}>{l.desc}</div>
               </button>
