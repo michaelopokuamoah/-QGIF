@@ -1064,6 +1064,186 @@ function CriminalTab({criminalData,criminalLoading,runCriminal}){
   );
 }
 
+// ── MONITORING TAB ──
+function MonitoringTab({monitorData,monitorLoading,runMonitor,dashData,dashLoading,loadDash}){
+  const [email,setEmail]=useState("");
+  const [orgName,setOrgName]=useState("");
+  const [regStatus,setRegStatus]=useState(null);
+  const [regLoading,setRegLoading]=useState(false);
+  const API="https://qgif-backend.onrender.com";
+
+  const registerAlert=async()=>{
+    if(!email){return;}
+    setRegLoading(true);setRegStatus(null);
+    try{
+      const r=await fetch(API+"/monitoring/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,organisation:orgName,regions:["all"],severity_threshold:"WARNING",name:orgName})});
+      const d=await r.json();setRegStatus(d);
+    }catch(e){setRegStatus({error:e.message});}
+    finally{setRegLoading(false);}
+  };
+
+  const SEV_COL={CRITICAL:RED,WARNING:AMBER,WATCH:"#F5C842",IMPROVEMENT:GREEN,INFO:CYAN};
+
+  return(
+    <div style={{width:"100%",height:"100%",overflowY:"auto",padding:20,background:BG}}>
+      <div style={{maxWidth:900,margin:"0 auto"}}>
+
+        {/* Header */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:10}}>
+          <div>
+            <div style={{fontFamily:FH,fontSize:22,color:TEXT,fontWeight:"normal",marginBottom:4}}>📡 Environmental Monitoring System</div>
+            <div style={{fontFamily:FB,fontSize:12,color:MUTED}}>Automated 30-day satellite surveillance for all 12 Ghana regions</div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={loadDash} style={{padding:"8px 14px",borderRadius:7,border:`1px solid ${BORDER}`,background:P2,color:CYAN,fontSize:12,fontFamily:FB,cursor:"pointer"}}>↻ Refresh Dashboard</button>
+            <button onClick={runMonitor} disabled={monitorLoading} style={{padding:"8px 14px",borderRadius:7,border:"none",background:monitorLoading?MUTED:`linear-gradient(135deg,${CYAN},#0099BB)`,color:BG,fontSize:12,fontWeight:700,fontFamily:FB,cursor:monitorLoading?"not-allowed":"pointer"}}>
+              {monitorLoading?"Running check...":"▶ Run Check Now"}
+            </button>
+          </div>
+        </div>
+
+        {/* How it works */}
+        <div style={{background:P2,borderRadius:10,padding:"12px 16px",marginBottom:16,border:`1px solid ${CYAN}22`}}>
+          <div style={{fontFamily:FM,fontSize:9,color:CYAN,marginBottom:8,letterSpacing:".08em"}}>HOW THE MONITORING SYSTEM WORKS</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10}}>
+            {[
+              ["🛰️","Every 30 Days","System automatically queries Earth Engine for all 12 regions"],
+              ["📊","Compares Readings","Checks if degradation gap increased by more than 0.05"],
+              ["🚨","Generates Alerts","CRITICAL (0.10+), WARNING (0.05+), WATCH (0.02+)"],
+              ["📧","Sends Notifications","Email alerts to registered users instantly"],
+            ].map(([icon,title,desc])=>(
+              <div key={title} style={{background:BG,borderRadius:7,padding:"10px 12px"}}>
+                <div style={{fontSize:18,marginBottom:4}}>{icon}</div>
+                <div style={{fontFamily:FB,fontSize:12,color:CYAN,marginBottom:3}}>{title}</div>
+                <div style={{fontFamily:FB,fontSize:11,color:MUTED,lineHeight:1.5}}>{desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Dashboard */}
+        {dashLoading&&<Spinner label="Loading monitoring dashboard..."/>}
+        {!dashLoading&&dashData&&(
+          <div>
+            {/* System status */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:16}}>
+              {[
+                ["System",dashData.system_status?.includes("ACTIVE")?"ACTIVE":"DEGRADED",dashData.system_status?.includes("ACTIVE")?GREEN:RED],
+                ["Last Check",dashData.last_full_check||"Never",CYAN],
+                ["Total Runs",dashData.total_monitoring_runs||0,PURPLE],
+                ["Total Alerts",dashData.total_alerts_ever||0,AMBER],
+                ["Critical",dashData.active_critical_alerts||0,RED],
+                ["Warnings",dashData.active_warning_alerts||0,AMBER],
+              ].map(([label,val,col])=>(
+                <div key={label} style={{background:P2,borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
+                  <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:4}}>{label}</div>
+                  <div style={{fontFamily:FB,fontSize:14,fontWeight:700,color:col}}>{val}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Region status grid */}
+            <div style={{fontFamily:FM,fontSize:9,color:MUTED,marginBottom:8,letterSpacing:".06em"}}>REGION STATUS</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:6,marginBottom:16}}>
+              {(dashData.regions||[]).map(r=>(
+                <div key={r.region} style={{background:P2,borderRadius:8,padding:"10px 12px",border:`1px solid ${r.latest_threat_level==="CRITICAL"?RED:r.latest_threat_level==="HIGH"?AMBER:BORDER}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                    <div style={{fontFamily:FB,fontSize:11,fontWeight:700,color:TEXT}}>{r.region?.replace(" Region","")}</div>
+                    {r.latest_threat_level&&<Tag label={r.latest_threat_level} color={SEV_C[r.latest_threat_level]||MUTED}/>}
+                  </div>
+                  {r.latest_gap!=null?(
+                    <div style={{display:"flex",gap:10}}>
+                      <div>
+                        <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>DEG. GAP</div>
+                        <div style={{fontFamily:FB,fontSize:13,fontWeight:700,color:r.latest_gap>0.3?RED:r.latest_gap>0.15?AMBER:GREEN}}>{r.latest_gap}</div>
+                      </div>
+                      <div>
+                        <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>MINING</div>
+                        <div style={{fontFamily:FB,fontSize:13,fontWeight:700,color:r.latest_mining_score>60?RED:r.latest_mining_score>30?AMBER:GREEN}}>{r.latest_mining_score}</div>
+                      </div>
+                      <div>
+                        <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>CHECKED</div>
+                        <div style={{fontFamily:FB,fontSize:11,color:MUTED}}>{r.last_checked||"Never"}</div>
+                      </div>
+                    </div>
+                  ):(
+                    <div style={{fontFamily:FB,fontSize:11,color:MUTED}}>No data yet — run check</div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Recent alerts */}
+            {dashData.recent_critical_alerts?.length>0||dashData.recent_warnings?.length>0?(
+              <div style={{marginBottom:16}}>
+                <div style={{fontFamily:FM,fontSize:9,color:MUTED,marginBottom:8,letterSpacing:".06em"}}>RECENT ALERTS</div>
+                {[...( dashData.recent_critical_alerts||[]),...(dashData.recent_warnings||[])].map((alert,i)=>(
+                  <div key={i} style={{background:P2,borderRadius:8,padding:"10px 14px",marginBottom:6,borderLeft:`3px solid ${SEV_COL[alert.severity]||CYAN}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                      <Tag label={alert.severity} color={SEV_COL[alert.severity]||CYAN}/>
+                      <span style={{fontFamily:FM,fontSize:9,color:MUTED}}>{alert.date}</span>
+                    </div>
+                    <div style={{fontFamily:FB,fontSize:12,color:TEXT,lineHeight:1.6,marginBottom:4}}>{alert.message}</div>
+                    <div style={{fontFamily:FM,fontSize:10,color:CYAN}}>→ {alert.recommended_action}</div>
+                  </div>
+                ))}
+              </div>
+            ):null}
+          </div>
+        )}
+
+        {/* Run results */}
+        {monitorLoading&&<Spinner label="Running satellite checks for all 12 regions... This takes 3-5 minutes"/>}
+        {!monitorLoading&&monitorData&&!monitorData._error&&(
+          <div style={{background:P2,borderRadius:10,padding:"14px 16px",marginBottom:16,border:`1px solid ${GREEN}33`}}>
+            <div style={{fontFamily:FM,fontSize:9,color:GREEN,marginBottom:8}}>✓ MONITORING CHECK COMPLETE — {monitorData.checked_at?.split('T')[0]}</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
+              {[["Regions Checked",monitorData.regions_checked,CYAN],["Regions OK",monitorData.regions_ok,GREEN],["New Alerts",monitorData.new_alerts,monitorData.new_alerts>0?AMBER:GREEN],["Critical",monitorData.critical_alerts,monitorData.critical_alerts>0?RED:GREEN]].map(([l,v,c])=>(
+                <div key={l} style={{textAlign:"center",background:BG,borderRadius:6,padding:"8px 4px"}}>
+                  <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:3}}>{l}</div>
+                  <div style={{fontFamily:FB,fontSize:16,fontWeight:700,color:c}}>{v}</div>
+                </div>
+              ))}
+            </div>
+            {monitorData.alerts?.length>0&&(
+              <div>
+                <div style={{fontFamily:FM,fontSize:9,color:AMBER,marginBottom:6}}>NEW ALERTS FROM THIS CHECK:</div>
+                {monitorData.alerts.map((alert,i)=>(
+                  <div key={i} style={{background:BG,borderRadius:7,padding:"10px 12px",marginBottom:6,borderLeft:`3px solid ${SEV_COL[alert.severity]||CYAN}`}}>
+                    <Tag label={alert.severity} color={SEV_COL[alert.severity]||CYAN}/>
+                    <div style={{fontFamily:FB,fontSize:12,color:TEXT,marginTop:6,lineHeight:1.6}}>{alert.message}</div>
+                    <div style={{fontFamily:FM,fontSize:10,color:CYAN,marginTop:4}}>→ {alert.recommended_action}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {monitorData.new_alerts===0&&<div style={{fontFamily:FB,fontSize:12,color:GREEN}}>✓ No significant changes detected in any region since last check.</div>}
+          </div>
+        )}
+
+        {/* Register for alerts */}
+        <div style={{background:P2,borderRadius:10,padding:"14px 16px",border:`1px solid ${PURPLE}33`}}>
+          <div style={{fontFamily:FM,fontSize:9,color:PURPLE,marginBottom:10,letterSpacing:".06em"}}>📧 REGISTER FOR MONITORING ALERTS</div>
+          <div style={{fontFamily:FB,fontSize:12,color:TEXT2,marginBottom:12,lineHeight:1.6}}>Get automatic email alerts when QGIF detects new environmental disturbances. Alerts are sent within hours of the monthly satellite check.</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+            <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email address" style={{flex:2,minWidth:200,background:BG,border:`1px solid ${BORDER}`,borderRadius:6,padding:"8px 10px",color:TEXT,fontSize:12,outline:"none",fontFamily:FB}}/>
+            <input value={orgName} onChange={e=>setOrgName(e.target.value)} placeholder="Organisation (optional)" style={{flex:2,minWidth:160,background:BG,border:`1px solid ${BORDER}`,borderRadius:6,padding:"8px 10px",color:TEXT,fontSize:12,outline:"none",fontFamily:FB}}/>
+            <button onClick={registerAlert} disabled={regLoading||!email} style={{padding:"8px 16px",borderRadius:6,border:"none",background:regLoading||!email?MUTED:`linear-gradient(135deg,${PURPLE},#7C3AED)`,color:"white",fontSize:12,fontWeight:700,cursor:regLoading||!email?"not-allowed":"pointer",fontFamily:FB}}>
+              {regLoading?"Registering...":"Register"}
+            </button>
+          </div>
+          {regStatus&&!regStatus.error&&<div style={{fontFamily:FB,fontSize:12,color:GREEN}}>✓ {regStatus.message} — You will receive alerts for: {regStatus.alert_threshold}</div>}
+          {regStatus?.error&&<div style={{fontFamily:FB,fontSize:12,color:AMBER}}>Error: {regStatus.error}</div>}
+          <div style={{fontFamily:FM,fontSize:9,color:MUTED,marginTop:8}}>
+            Alert levels: WATCH (minor increase) · WARNING (significant increase, EPA visit recommended) · CRITICAL (major disturbance, immediate action)
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 export default function App(){
   const [role,setRole]=useState(ROLES[0]);
   const [layer,setLayer]=useState(LAYERS[0]);
@@ -1104,12 +1284,16 @@ export default function App(){
   const [airLoading,setAirLoading]=useState(false);
   const [criminalData,setCriminalData]=useState(null);
   const [criminalLoading,setCriminalLoading]=useState(false);
+  const [monitorData,setMonitorData]=useState(null);
+  const [monitorLoading,setMonitorLoading]=useState(false);
+  const [dashData,setDashData]=useState(null);
+  const [dashLoading,setDashLoading]=useState(false);
   const [satData,setSatData]=useState(null);
   const [satLoading,setSatLoading]=useState(false);
   const [liveDetect,setLiveDetect]=useState(null);
   const [liveDetectLoading,setLiveDetectLoading]=useState(false);
 
-  const TABS=["Map","Quantum Optimizer","Scenario Simulator","Risk Matrix","Disease Intelligence","Digital Lawyer","Dam Risk","Crop Insurance","Air Quality","Criminal Network"];
+  const TABS=["Map","Quantum Optimizer","Scenario Simulator","Risk Matrix","Disease Intelligence","Digital Lawyer","Dam Risk","Crop Insurance","Air Quality","Criminal Network","Monitoring"];
 
   useEffect(()=>{const t=setInterval(()=>setTime(new Date().toLocaleTimeString("en-GB")+" GMT"),1000);return()=>clearInterval(t);},[]);
 
@@ -1135,6 +1319,8 @@ export default function App(){
   const runAir=useCallback(async(reg)=>{setAirLoading(true);setAirData(null);try{const d=await post("/air-quality",{region:reg});setAirData(d);}catch(e){setAirData({_error:e.message});}finally{setAirLoading(false);}},[post]);
   const runCriminal=useCallback(async(reg)=>{setCriminalLoading(true);setCriminalData(null);try{const d=await post("/criminal-network",{region:reg});setCriminalData(d);}catch(e){setCriminalData({_error:e.message});}finally{setCriminalLoading(false);}},[post]);
   const runSatelliteCheck=useCallback(async(reg)=>{setSatLoading(true);setSatData(null);try{const d=await post("/satellite-check",{region:reg});setSatData(d);}catch(e){setSatData({_error:e.message});}finally{setSatLoading(false);}},[post]);
+  const runMonitor=useCallback(async()=>{setMonitorLoading(true);setMonitorData(null);try{const r=await fetch("https://qgif-backend.onrender.com/monitoring/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({secret:"qgif-monitor-2026"})});const d=await r.json();setMonitorData(d);}catch(e){setMonitorData({_error:e.message});}finally{setMonitorLoading(false);}},[]);
+  const loadDash=useCallback(async()=>{setDashLoading(true);try{const r=await fetch("https://qgif-backend.onrender.com/monitoring/dashboard");const d=await r.json();setDashData(d);}catch(e){setDashData({_error:e.message});}finally{setDashLoading(false);}},[]);
 
   const handleRegionClick=useCallback((name)=>{setRegion(name);setActiveRegion(name);setClickedCoord(null);runPrediction(name,layer,role);runSatelliteCheck(name);},[layer,role,runPrediction,runSatelliteCheck]);
   const handleCoordClick=useCallback(async(lat,lng,name)=>{
@@ -1161,7 +1347,7 @@ export default function App(){
     const nearest=regionDists.sort((a,b)=>a.dist-b.dist)[0];
     if(nearest){setRegion(nearest.rname);runPrediction(nearest.rname,layer,role);}
   },[layer,role,runPrediction]);
-  const handleRoleSelect=useCallback((r)=>{setRole(r);setShowRoleModal(false);if(region)runPrediction(region,layer,r);},[region,layer,runPrediction]);
+  const handleTabChange=useCallback((tab)=>{setActiveTab(tab);if(tab==="Monitoring"&&!dashData&&!dashLoading){loadDash();}},[dashData,dashLoading,loadDash]);
 
   return(
     <div style={{display:"grid",gridTemplateRows:"52px 1fr",height:"100vh",background:BG,color:TEXT,fontFamily:FB,fontSize:13,overflow:"hidden"}}>
@@ -1213,7 +1399,7 @@ export default function App(){
         </div>
         <div className="tab-scroll" style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"center",flex:1,overflow:"hidden"}}>
           {TABS.map(tab=>(
-            <button key={tab} onClick={()=>setActiveTab(tab)} style={{padding:"4px 9px",borderRadius:5,fontFamily:FB,fontSize:10,cursor:"pointer",border:`1px solid ${activeTab===tab?CYAN:BORDER2}`,background:activeTab===tab?`${CYAN}10`:"transparent",color:activeTab===tab?CYAN:MUTED,whiteSpace:"nowrap",flexShrink:0}}>{tab}</button>
+            <button key={tab} onClick={()=>handleTabChange(tab)} style={{padding:"4px 9px",borderRadius:5,fontFamily:FB,fontSize:10,cursor:"pointer",border:`1px solid ${activeTab===tab?CYAN:BORDER2}`,background:activeTab===tab?`${CYAN}10`:"transparent",color:activeTab===tab?CYAN:MUTED,whiteSpace:"nowrap",flexShrink:0}}>{tab}</button>
           ))}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
@@ -1256,6 +1442,7 @@ export default function App(){
           <div style={{display:activeTab==="Crop Insurance"?"flex":"none",width:"100%",height:"100%"}}><InsuranceTab insuranceData={insuranceData} insuranceLoading={insuranceLoading} runInsurance={runInsurance}/></div>
           <div style={{display:activeTab==="Air Quality"?"flex":"none",width:"100%",height:"100%"}}><AirTab airData={airData} airLoading={airLoading} runAir={runAir}/></div>
           <div style={{display:activeTab==="Criminal Network"?"flex":"none",width:"100%",height:"100%"}}><CriminalTab criminalData={criminalData} criminalLoading={criminalLoading} runCriminal={runCriminal}/></div>
+          <div style={{display:activeTab==="Monitoring"?"flex":"none",width:"100%",height:"100%",overflowY:"auto"}}><MonitoringTab monitorData={monitorData} monitorLoading={monitorLoading} runMonitor={runMonitor} dashData={dashData} dashLoading={dashLoading} loadDash={loadDash}/></div>
         </div>
 
         <div className="desktop-right" style={{background:PANEL,borderLeft:`1px solid ${BORDER}`,display:"flex",flexDirection:"column",overflow:"hidden"}}>

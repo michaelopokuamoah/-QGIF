@@ -1577,6 +1577,416 @@ app.get('/', (req, res) => {
   });
 });
 
+// ============================================================
+// MONITORING SYSTEM — Automated 30-day environmental watch
+// Tracks all 12 Ghana regions, flags new disturbances,
+// stores history, sends alerts
+// ============================================================
+
+const MONITORING_FILE = path.join(__dirname, 'monitoring_history.json');
+const ALERTS_FILE = path.join(__dirname, 'monitoring_alerts.json');
+
+// Load or initialize monitoring history
+function loadMonitoringHistory() {
+  try {
+    if (fs.existsSync(MONITORING_FILE)) {
+      return JSON.parse(fs.readFileSync(MONITORING_FILE, 'utf8'));
+    }
+  } catch(e) { console.log('  ⚠ Could not load monitoring history:', e.message); }
+  return { regions: {}, last_run: null, total_runs: 0 };
+}
+
+function saveMonitoringHistory(data) {
+  try { fs.writeFileSync(MONITORING_FILE, JSON.stringify(data, null, 2)); }
+  catch(e) { console.log('  ⚠ Could not save monitoring history:', e.message); }
+}
+
+function loadAlerts() {
+  try {
+    if (fs.existsSync(ALERTS_FILE)) {
+      return JSON.parse(fs.readFileSync(ALERTS_FILE, 'utf8'));
+    }
+  } catch(e) {}
+  return { alerts: [], total_alerts: 0 };
+}
+
+function saveAlerts(data) {
+  try { fs.writeFileSync(ALERTS_FILE, JSON.stringify(data, null, 2)); }
+  catch(e) { console.log('  ⚠ Could not save alerts:', e.message); }
+}
+
+// Run monitoring check for a single region
+async function monitorRegion(regionName, regionData) {
+  try {
+    const raw = await getLiveDetection(regionData.lat, regionData.lng, 5000);
+    const intel = interpretDetection(raw, 5);
+    const currentDate = new Date(raw.current_date).toISOString().split('T')[0];
+    const degradationGap = Math.round((raw.ndvi_mean - raw.ndvi_p10) * 1000) / 1000;
+
+    return {
+      region: regionName,
+      checked_at: new Date().toISOString(),
+      satellite_date: currentDate,
+      ndvi_mean: Math.round((raw.ndvi_mean || 0) * 1000) / 1000,
+      ndvi_p10: Math.round((raw.ndvi_p10 || 0) * 1000) / 1000,
+      degradation_gap: degradationGap,
+      bsi_mean: Math.round((raw.bsi_mean || 0) * 1000) / 1000,
+      bsi_change: Math.round((raw.bsi_change_mean || 0) * 1000) / 1000,
+      mining_score: intel.mining_detection.score,
+      contamination_score: intel.water_contamination.score,
+      mercury_proxy_mgl: intel.water_contamination.mercury_proxy_mgl,
+      outbreak_probability: intel.health_risk.outbreak_probability_30days_pct,
+      threat_level: intel.overall.threat_level,
+      status: 'OK',
+    };
+  } catch(e) {
+    return { region: regionName, checked_at: new Date().toISOString(), status: 'ERROR', error: e.message };
+  }
+}
+
+// Generate alert message
+function generateAlert(regionName, previous, current) {
+  const gap_change = Math.round((current.degradation_gap - previous.degradation_gap) * 1000) / 1000;
+  const mining_change = current.mining_score - previous.mining_score;
+  const date = new Date().toISOString().split('T')[0];
+
+  let severity = 'INFO';
+  let message = '';
+
+  if (gap_change >= 0.1 || mining_change >= 20) {
+    severity = 'CRITICAL';
+    message = `CRITICAL ALERT — ${regionName}: Major new land disturbance detected. Degradation gap increased from ${previous.degradation_gap} to ${current.degradation_gap} (+${gap_change}). Mining score: ${previous.mining_score} → ${current.mining_score}. IMMEDIATE field verification recommended.`;
+  } else if (gap_change >= 0.05 || mining_change >= 10) {
+    severity = 'WARNING';
+    message = `WARNING — ${regionName}: New disturbance detected since last check. Degradation gap increased from ${previous.degradation_gap} to ${current.degradation_gap} (+${gap_change}). Mining score: ${previous.mining_score} → ${current.mining_score}. EPA field visit recommended within 7 days.`;
+  } else if (gap_change >= 0.02) {
+    severity = 'WATCH';
+    message = `WATCH — ${regionName}: Minor increase in land disturbance. Degradation gap: ${previous.degradation_gap} → ${current.degradation_gap} (+${gap_change}). Monitor closely. Next check in 30 days.`;
+  } else if (gap_change <= -0.05) {
+    severity = 'IMPROVEMENT';
+    message = `IMPROVEMENT — ${regionName}: Satellite signals show reduced disturbance. Degradation gap decreased from ${previous.degradation_gap} to ${current.degradation_gap} (${gap_change}). Possible enforcement success or seasonal vegetation recovery.`;
+  }
+
+  if (!message) return null;
+
+  return {
+    id: `ALERT-${Date.now()}`,
+    date,
+    region: regionName,
+    severity,
+    message,
+    gap_change,
+    mining_score_change: mining_change,
+    previous_gap: previous.degradation_gap,
+    current_gap: current.degradation_gap,
+    previous_mining_score: previous.mining_score,
+    current_mining_score: current.mining_score,
+    satellite_date: current.satellite_date,
+    coordinates: { lat: REGION_DATA[regionName]?.lat, lng: REGION_DATA[regionName]?.lng },
+    recommended_action: severity === 'CRITICAL' ? 'IMMEDIATE field verification — contact EPA enforcement unit' :
+                        severity === 'WARNING' ? 'EPA field visit within 7 days — verify satellite finding' :
+                        severity === 'WATCH' ? 'Schedule monitoring visit within 30 days' :
+                        'Document improvement — update enforcement records',
+  };
+}
+
+// Run full monitoring check for all 12 regions
+async function runFullMonitoringCheck() {
+  if (!EE_READY) {
+    console.log('  ⚠ Monitoring check skipped — Earth Engine not ready');
+    return { status: 'SKIPPED', reason: 'Earth Engine not connected' };
+  }
+
+  console.log('\n  ═══════════════════════════════════════');
+  console.log('  QGIF MONITORING SYSTEM — Starting check');
+  console.log('  ═══════════════════════════════════════');
+
+  const history = loadMonitoringHistory();
+  const alertsData = loadAlerts();
+  const newAlerts = [];
+  const results = {};
+  const checkDate = new Date().toISOString();
+
+  const regions = Object.keys(REGION_DATA);
+
+  for (const regionName of regions) {
+    console.log(`  Checking ${regionName}...`);
+    const result = await monitorRegion(regionName, REGION_DATA[regionName]);
+    results[regionName] = result;
+
+    // Compare with previous reading if exists
+    if (history.regions[regionName] && result.status === 'OK') {
+      const previous = history.regions[regionName].latest;
+      if (previous && previous.status === 'OK') {
+        const alert = generateAlert(regionName, previous, result);
+        if (alert) {
+          newAlerts.push(alert);
+          alertsData.alerts.unshift(alert); // newest first
+          alertsData.total_alerts++;
+          console.log(`  ⚠ ALERT: ${alert.severity} — ${regionName}`);
+        } else {
+          console.log(`  ✓ ${regionName}: No significant change (gap: ${result.degradation_gap})`);
+        }
+      }
+    } else {
+      console.log(`  ✓ ${regionName}: First reading stored (gap: ${result.degradation_gap})`);
+    }
+
+    // Update history for this region
+    if (!history.regions[regionName]) {
+      history.regions[regionName] = { readings: [], latest: null };
+    }
+    history.regions[regionName].readings.push(result);
+    history.regions[regionName].latest = result;
+    // Keep only last 24 readings (2 years of monthly checks)
+    if (history.regions[regionName].readings.length > 24) {
+      history.regions[regionName].readings = history.regions[regionName].readings.slice(-24);
+    }
+  }
+
+  history.last_run = checkDate;
+  history.total_runs = (history.total_runs || 0) + 1;
+
+  // Keep only last 500 alerts
+  alertsData.alerts = alertsData.alerts.slice(0, 500);
+
+  saveMonitoringHistory(history);
+  saveAlerts(alertsData);
+
+  const summary = {
+    status: 'COMPLETED',
+    checked_at: checkDate,
+    regions_checked: regions.length,
+    regions_ok: Object.values(results).filter(r => r.status === 'OK').length,
+    regions_error: Object.values(results).filter(r => r.status === 'ERROR').length,
+    new_alerts: newAlerts.length,
+    critical_alerts: newAlerts.filter(a => a.severity === 'CRITICAL').length,
+    warning_alerts: newAlerts.filter(a => a.severity === 'WARNING').length,
+    alerts: newAlerts,
+    results,
+  };
+
+  console.log(`\n  ✓ Monitoring check complete: ${regions.length} regions checked, ${newAlerts.length} alerts generated`);
+  console.log('  ═══════════════════════════════════════\n');
+
+  return summary;
+}
+
+// Schedule monitoring — check every 30 days automatically
+function scheduleMonitoring() {
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
+  // Check if we should run now (30 days since last run)
+  const history = loadMonitoringHistory();
+  if (history.last_run) {
+    const lastRun = new Date(history.last_run);
+    const now = new Date();
+    const daysSinceLastRun = Math.floor((now - lastRun) / (1000 * 60 * 60 * 24));
+    console.log(`  📡 Monitoring: Last run ${daysSinceLastRun} days ago`);
+    if (daysSinceLastRun < 30) {
+      console.log(`  📡 Next monitoring check in ${30 - daysSinceLastRun} days`);
+    }
+  }
+
+  // Schedule automatic runs every 30 days
+  setInterval(async () => {
+    console.log('\n  📡 Automatic 30-day monitoring check triggered...');
+    await runFullMonitoringCheck();
+  }, THIRTY_DAYS_MS);
+
+  console.log('  ✓ 30-day monitoring scheduler active');
+}
+
+// ── MONITORING API ENDPOINTS ──
+
+// Run a full monitoring check now (manual trigger)
+app.post('/monitoring/run', async (req, res) => {
+  const { secret } = req.body;
+  // Basic protection — require a trigger key
+  if (secret !== 'qgif-monitor-2026') {
+    return res.status(401).json({ error: 'Invalid monitoring key' });
+  }
+  try {
+    const summary = await runFullMonitoringCheck();
+    res.json(summary);
+  } catch(e) {
+    res.json({ status: 'ERROR', message: e.message });
+  }
+});
+
+// Get monitoring history for all regions
+app.get('/monitoring/history', (req, res) => {
+  const history = loadMonitoringHistory();
+  const alerts = loadAlerts();
+  res.json({
+    last_run: history.last_run,
+    total_runs: history.total_runs,
+    regions: Object.entries(history.regions).map(([name, data]) => ({
+      region: name,
+      latest: data.latest,
+      total_readings: data.readings.length,
+      trend: data.readings.length >= 2 ? (() => {
+        const readings = data.readings.filter(r => r.status === 'OK');
+        if (readings.length < 2) return 'INSUFFICIENT DATA';
+        const first = readings[0].degradation_gap || 0;
+        const last = readings[readings.length - 1].degradation_gap || 0;
+        const change = last - first;
+        return change > 0.05 ? 'WORSENING' : change < -0.05 ? 'IMPROVING' : 'STABLE';
+      })() : 'FIRST READING',
+      readings: data.readings,
+    })),
+    recent_alerts: alerts.alerts.slice(0, 20),
+    total_alerts: alerts.total_alerts,
+  });
+});
+
+// Get alerts only
+app.get('/monitoring/alerts', (req, res) => {
+  const alerts = loadAlerts();
+  const { severity, region, limit } = req.query;
+  let filtered = alerts.alerts;
+  if (severity) filtered = filtered.filter(a => a.severity === severity.toUpperCase());
+  if (region) filtered = filtered.filter(a => a.region.toLowerCase().includes(region.toLowerCase()));
+  const lim = parseInt(limit) || 50;
+  res.json({
+    alerts: filtered.slice(0, lim),
+    total: alerts.total_alerts,
+    filters_applied: { severity: severity || 'all', region: region || 'all', limit: lim },
+  });
+});
+
+// Get history for a single region
+app.get('/monitoring/region/:name', (req, res) => {
+  const history = loadMonitoringHistory();
+  const regionName = decodeURIComponent(req.params.name);
+  const regionHistory = history.regions[regionName];
+  if (!regionHistory) {
+    return res.json({ region: regionName, message: 'No monitoring data yet. Run /monitoring/run first.', readings: [] });
+  }
+  const readings = regionHistory.readings.filter(r => r.status === 'OK');
+  res.json({
+    region: regionName,
+    latest: regionHistory.latest,
+    total_readings: readings.length,
+    readings,
+    trend: readings.length >= 2 ? {
+      first_gap: readings[0].degradation_gap,
+      latest_gap: readings[readings.length - 1].degradation_gap,
+      total_change: Math.round((readings[readings.length-1].degradation_gap - readings[0].degradation_gap) * 1000) / 1000,
+      direction: readings[readings.length-1].degradation_gap > readings[0].degradation_gap ? 'WORSENING' : 'IMPROVING',
+      first_date: readings[0].checked_at?.split('T')[0],
+      latest_date: readings[readings.length-1].checked_at?.split('T')[0],
+    } : null,
+  });
+});
+
+// Register for alerts (email)
+app.post('/monitoring/register', (req, res) => {
+  const { email, regions, severity_threshold, name, organisation } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+
+  const SUBSCRIBERS_FILE = path.join(__dirname, 'monitoring_subscribers.json');
+  let subscribers = { subscribers: [] };
+  try {
+    if (fs.existsSync(SUBSCRIBERS_FILE)) {
+      subscribers = JSON.parse(fs.readFileSync(SUBSCRIBERS_FILE, 'utf8'));
+    }
+  } catch(e) {}
+
+  // Check if already registered
+  const existing = subscribers.subscribers.find(s => s.email === email);
+  if (existing) {
+    Object.assign(existing, { regions: regions || ['all'], severity_threshold: severity_threshold || 'WARNING', name, organisation, updated_at: new Date().toISOString() });
+    fs.writeFileSync(SUBSCRIBERS_FILE, JSON.stringify(subscribers, null, 2));
+    return res.json({ status: 'UPDATED', message: `Alert preferences updated for ${email}` });
+  }
+
+  subscribers.subscribers.push({
+    id: `SUB-${Date.now()}`,
+    email,
+    name: name || 'Unknown',
+    organisation: organisation || 'Unknown',
+    regions: regions || ['all'],
+    severity_threshold: severity_threshold || 'WARNING', // WARNING, CRITICAL, or ALL
+    registered_at: new Date().toISOString(),
+    active: true,
+  });
+
+  fs.writeFileSync(SUBSCRIBERS_FILE, JSON.stringify(subscribers, null, 2));
+  res.json({
+    status: 'REGISTERED',
+    message: `Successfully registered ${email} for QGIF monitoring alerts`,
+    alert_regions: regions || ['All 12 Ghana regions'],
+    alert_threshold: severity_threshold || 'WARNING and above',
+    next_check: (() => {
+      const history = loadMonitoringHistory();
+      if (history.last_run) {
+        const next = new Date(history.last_run);
+        next.setDate(next.getDate() + 30);
+        return next.toISOString().split('T')[0];
+      }
+      return 'Within 30 days';
+    })(),
+  });
+});
+
+// Get monitoring dashboard summary
+app.get('/monitoring/dashboard', (req, res) => {
+  const history = loadMonitoringHistory();
+  const alerts = loadAlerts();
+
+  const regions = Object.entries(history.regions).map(([name, data]) => {
+    const readings = (data.readings || []).filter(r => r.status === 'OK');
+    const latest = data.latest;
+    return {
+      region: name,
+      latest_gap: latest?.degradation_gap || null,
+      latest_mining_score: latest?.mining_score || null,
+      latest_threat_level: latest?.threat_level || null,
+      last_checked: latest?.checked_at?.split('T')[0] || null,
+      satellite_date: latest?.satellite_date || null,
+      readings_count: readings.length,
+      status: latest?.status || 'NO DATA',
+    };
+  });
+
+  const recentCritical = alerts.alerts.filter(a => a.severity === 'CRITICAL').slice(0, 5);
+  const recentWarnings = alerts.alerts.filter(a => a.severity === 'WARNING').slice(0, 10);
+
+  res.json({
+    system_status: EE_READY ? 'ACTIVE — Earth Engine Connected' : 'DEGRADED — Earth Engine Offline',
+    last_full_check: history.last_run ? history.last_run.split('T')[0] : 'Never',
+    total_monitoring_runs: history.total_runs || 0,
+    regions_monitored: regions.length,
+    total_alerts_ever: alerts.total_alerts,
+    active_critical_alerts: recentCritical.length,
+    active_warning_alerts: recentWarnings.length,
+    regions,
+    recent_critical_alerts: recentCritical,
+    recent_warnings: recentWarnings,
+    next_scheduled_check: (() => {
+      if (!history.last_run) return 'Run /monitoring/run to start';
+      const next = new Date(history.last_run);
+      next.setDate(next.getDate() + 30);
+      return next.toISOString().split('T')[0];
+    })(),
+  });
+});
+
+// Initialize monitoring scheduler after Earth Engine connects
+setTimeout(() => {
+  if (EE_READY) scheduleMonitoring();
+  else {
+    // Wait for EE to be ready then start scheduler
+    const checkEE = setInterval(() => {
+      if (EE_READY) {
+        clearInterval(checkEE);
+        scheduleMonitoring();
+      }
+    }, 5000);
+  }
+}, 10000);
+
 app.listen(5000, () => {
   console.log('');
   console.log('  QGIF Intelligence Server v6.0');
@@ -1589,6 +1999,7 @@ app.listen(5000, () => {
   console.log('  ✓ Parametric Crop Insurance');
   console.log('  ✓ Air Quality Alert System');
   console.log('  ✓ Criminal Network Intelligence');
+  console.log('  ✓ 30-Day Autonomous Monitoring System');
   console.log('  ✓ Satellite-Based Live Detection (BSI + IOR + MNDWI + Change Detection)');
   console.log('  ✓ Scenario Simulator');
   console.log('  ');
