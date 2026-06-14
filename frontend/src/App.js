@@ -248,62 +248,137 @@ function FlyToHandler({center}){
 }
 
 function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSearchQuery,mapCenter,setMapCenter,showHotspots,setShowHotspots,showTowns,setShowTowns,clickedCoord,satLoading,satData}){
-  const mapRef=useRef(null);
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 769;
+  const [hovered,setHovered]=useState(null);
 
+  // SVG region paths for Ghana
+  const MAP_REGIONS=[
+    {name:"Upper West Region",risk:"LOW",d:"M130,58 L285,58 L295,100 L275,162 L245,202 L205,222 L165,212 L135,192 L115,152 L115,100 Z"},
+    {name:"Upper East Region",risk:"LOW",d:"M285,58 L445,58 L455,82 L465,132 L445,182 L405,202 L365,212 L325,202 L295,182 L275,162 L295,100 Z"},
+    {name:"Northern Region",risk:"LOW",d:"M115,152 L135,192 L165,212 L205,222 L245,202 L275,162 L295,182 L325,202 L365,212 L405,202 L445,182 L465,202 L475,262 L455,322 L425,362 L385,382 L345,372 L305,362 L265,352 L225,342 L185,322 L155,292 L133,252 L118,212 Z"},
+    {name:"Brong-Ahafo",risk:"MEDIUM",d:"M133,252 L155,292 L185,322 L225,342 L265,352 L305,362 L345,372 L385,382 L425,362 L455,372 L475,412 L465,452 L435,472 L395,462 L355,452 L315,442 L275,432 L235,422 L195,402 L165,382 L143,352 L128,312 Z"},
+    {name:"Ashanti Region",risk:"MEDIUM",d:"M195,402 L235,422 L275,432 L315,442 L355,452 L395,462 L435,472 L455,512 L445,552 L415,572 L375,562 L335,552 L295,542 L255,532 L215,512 L188,482 L183,452 Z"},
+    {name:"Eastern Region",risk:"HIGH",d:"M335,552 L375,562 L415,572 L455,562 L475,592 L485,632 L465,662 L435,672 L405,662 L375,642 L345,622 L323,594 L318,568 Z"},
+    {name:"Oti Region",risk:"MEDIUM",d:"M455,322 L475,262 L505,222 L545,192 L575,212 L585,272 L575,342 L555,412 L535,472 L515,512 L495,552 L485,582 L485,632 L465,662 L435,672 L415,572 L455,512 L455,462 L475,412 L465,362 Z"},
+    {name:"Western Region",risk:"CRITICAL",d:"M143,472 L188,482 L215,512 L255,532 L295,542 L318,568 L323,594 L313,624 L293,652 L263,672 L233,682 L203,672 L173,642 L153,612 L138,572 L128,532 L133,492 Z"},
+    {name:"Central Region",risk:"HIGH",d:"M313,624 L343,622 L375,642 L405,662 L415,692 L395,722 L365,732 L335,722 L308,702 L298,672 L293,652 Z"},
+    {name:"Greater Accra",risk:"MEDIUM",d:"M415,692 L435,672 L465,662 L495,672 L505,702 L495,727 L468,742 L442,737 L418,722 Z"},
+    {name:"Volta Region",risk:"LOW",d:"M455,362 L475,412 L455,462 L455,512 L415,572 L395,462 L435,472 L455,452 L465,372 Z"},
+    {name:"Bono East",risk:"MEDIUM",d:"M425,362 L455,372 L465,452 L435,472 L395,462 L355,452 L345,372 Z"},
+  ];
+
+  const SF={CRITICAL:"rgba(232,58,58,0.12)",HIGH:"rgba(240,112,32,0.10)",MEDIUM:"rgba(245,200,66,0.08)",LOW:"rgba(0,232,122,0.05)"};
+  const SS={CRITICAL:"rgba(232,58,58,0.5)",HIGH:"rgba(240,112,32,0.4)",MEDIUM:"rgba(245,200,66,0.3)",LOW:"rgba(0,232,122,0.25)"};
+
+  // On mobile use SVG map, on desktop use Leaflet
+  if(isMobile){
+    return(
+      <div style={{position:"relative",width:"100%",height:"100%",background:"#030A14",overflow:"hidden"}}>
+        <div style={{position:"absolute",left:0,right:0,height:2,zIndex:15,pointerEvents:"none",background:"linear-gradient(90deg,transparent,rgba(0,200,240,.5),#00C8F0,rgba(0,200,240,.5),transparent)",animation:"scan 4s linear infinite"}}/>
+        <div style={{position:"absolute",top:0,left:0,right:0,zIndex:20,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:"rgba(3,10,20,.95)",borderBottom:"1px solid rgba(0,200,240,0.1)"}}>
+          <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:12,fontWeight:600,color:TEXT}}>{layer.label} — Tap any region</div>
+          <div style={{fontFamily:"'Courier New',monospace",fontSize:10,color:CYAN}}>{activeRegion||"No region selected"}</div>
+        </div>
+        <svg viewBox="0 0 700 820" style={{width:"100%",height:"calc(100% - 76px)",marginTop:40,cursor:"pointer"}} xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="rg1" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="#E83A3A" stopOpacity=".25"/><stop offset="100%" stopColor="#E83A3A" stopOpacity="0"/></radialGradient>
+            <radialGradient id="rg2" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="#F07020" stopOpacity=".18"/><stop offset="100%" stopColor="#F07020" stopOpacity="0"/></radialGradient>
+            <filter id="blur"><feGaussianBlur stdDeviation="20"/></filter>
+          </defs>
+          {[100,200,300,400,500,600,700].map(y=><line key={y} x1="0" y1={y} x2="700" y2={y} stroke="rgba(0,200,240,.04)" strokeWidth=".5"/>)}
+          {[100,200,300,400,500,600].map(x=><line key={x} x1={x} y1="0" x2={x} y2="820" stroke="rgba(0,200,240,.04)" strokeWidth=".5"/>)}
+          <ellipse cx="230" cy="560" rx="110" ry="90" fill="url(#rg1)" filter="url(#blur)"/>
+          <ellipse cx="390" cy="440" rx="90" ry="75" fill="url(#rg2)" filter="url(#blur)"/>
+          {MAP_REGIONS.map(r=>(
+            <path key={r.name} d={r.d}
+              fill={activeRegion===r.name?"rgba(0,200,240,.22)":hovered===r.name?"rgba(0,200,240,.1)":SF[r.risk]}
+              stroke={activeRegion===r.name?CYAN:SS[r.risk]}
+              strokeWidth={activeRegion===r.name?1.6:.7}
+              style={{transition:"all .18s",cursor:"pointer"}}
+              onClick={()=>onRegionClick(r.name)}
+              onMouseEnter={()=>setHovered(r.name)}
+              onMouseLeave={()=>setHovered(null)}
+            />
+          ))}
+          {[[175,152,"UPPER WEST"],[365,148,"UPPER EAST"],[295,280,"NORTHERN"],[308,418,"BRONG-AHAFO"],[318,498,"ASHANTI"],[415,612,"EASTERN"],[215,576,"WESTERN"],[350,678,"CENTRAL"],[458,706,"GR. ACCRA"],[522,432,"VOLTA"],[405,420,"BONO EAST"]].map(([x,y,t])=>(
+            <text key={t} x={x} y={y} fill="rgba(0,200,240,.45)" fontSize="9" fontFamily="monospace" textAnchor="middle" pointerEvents="none">{t}</text>
+          ))}
+          {[[354,718,"Accra",5],[308,494,"Kumasi",4],[270,370,"Sunyani",3],[332,200,"Tamale",3]].map(([cx,cy,lbl,r])=>(
+            <g key={lbl}><circle cx={cx} cy={cy} r={r} fill={CYAN} opacity=".85"/><text x={cx+10} y={cy+4} fill={CYAN} fontSize={r*2.5} fontFamily="monospace" opacity=".75">{lbl}</text></g>
+          ))}
+          {[[202,562,RED,0],[424,522,AMBER,.5],[342,272,GREEN,.9]].map(([cx,cy,col,delay])=>(
+            <g key={`hs${cx}`}>
+              <circle r="5" cx={cx} cy={cy} fill="none" stroke={col} strokeWidth="2" style={{animation:`hspulse 2s ease-out infinite ${delay}s`}}/>
+              <circle r="4" cx={cx} cy={cy} fill={col} opacity=".9"/>
+            </g>
+          ))}
+        </svg>
+        {/* Live satellite status on mobile map */}
+        {(satLoading||satData)&&(
+          <div style={{position:"absolute",bottom:40,left:8,right:8,zIndex:20,background:"rgba(8,22,42,0.96)",border:"1px solid rgba(0,200,240,0.3)",borderRadius:8,padding:"8px 12px"}}>
+            {satLoading&&<div style={{fontFamily:"'Courier New',monospace",fontSize:10,color:AMBER,display:"flex",alignItems:"center",gap:6}}><span style={{width:5,height:5,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/>Querying satellite...</div>}
+            {!satLoading&&satData&&satData.earth_engine_status?.includes("CONNECTED")&&(
+              <div>
+                <div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:GREEN,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block"}}/>LIVE SENTINEL-2 · {satData.satellite_date}</div>
+                <div style={{display:"flex",gap:12}}>
+                  <div><div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED}}>NDVI</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:13,fontWeight:700,color:satData.ndvi_mean>0.5?GREEN:AMBER}}>{satData.ndvi_mean}</div></div>
+                  <div><div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED}}>DEGRADATION</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:13,fontWeight:700,color:satData.degradation_gap>0.25?RED:GREEN}}>{satData.degradation_gap}</div></div>
+                  <div><div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED}}>SIGNAL</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:11,fontWeight:700,color:satData.degradation_signal?.startsWith("YES")?RED:GREEN}}>{satData.degradation_signal?.startsWith("YES")?"ALERT":"CLEAR"}</div></div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        <div style={{position:"absolute",bottom:0,left:0,right:0,height:36,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 12px",background:"rgba(3,10,20,.95)",borderTop:"1px solid rgba(0,200,240,0.1)",zIndex:20}}>
+          <div style={{display:"flex",gap:14}}>
+            {[["Satellite","Sentinel-2",CYAN],["Sensors","847 online",GREEN],["Quantum","Active",PURPLE]].map(([k,v,col])=>(
+              <div key={k} style={{fontFamily:"'Courier New',monospace",fontSize:9,color:MUTED}}>{k} <span style={{color:col}}>{v}</span></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Desktop — full Leaflet satellite map
   return(
     <div style={{position:"relative",width:"100%",height:"100%",background:"#030A14"}}>
       <style>{`
         .qgif-tooltip{background:#08162A!important;border:1px solid rgba(0,200,240,0.4)!important;color:#D8E8FF!important;font-family:monospace!important;font-size:11px!important;padding:6px 10px!important;border-radius:6px!important;}
-        .qgif-hotspot{background:#1a0505!important;border:1px solid rgba(232,58,58,0.6)!important;color:#FFB3B3!important;}
-        .qgif-town{background:#0a0a1a!important;border:1px solid rgba(139,92,246,0.4)!important;color:#D8E8FF!important;}
-        .qgif-river{background:#051a15!important;border:1px solid rgba(0,232,122,0.4)!important;color:#B3FFE0!important;}
         .leaflet-container{background:#030A14!important;}
         .leaflet-control-attribution{background:rgba(8,22,42,0.85)!important;color:#4A6880!important;font-size:9px!important;}
         .leaflet-control-attribution a{color:#00C8F0!important;}
         .leaflet-control-zoom a{background:#08162A!important;color:#00C8F0!important;border-color:rgba(0,200,240,0.2)!important;}
-        .leaflet-control-zoom a:hover{background:#0B1E35!important;}
-        @keyframes pulse{0%,100%{transform:scale(1);opacity:0.8}50%{transform:scale(1.4);opacity:0.4}}
       `}</style>
 
       {/* TOP TOOLBAR */}
-      <div style={{position:"absolute",top:0,left:0,right:0,zIndex:1000,background:"rgba(3,10,20,.95)",borderBottom:`1px solid ${BORDER}`,padding:"6px 10px",display:"flex",gap:6,alignItems:"center",flexWrap:"nowrap",overflow:"hidden"}}>
-        {/* Search */}
+      <div style={{position:"absolute",top:0,left:0,right:0,zIndex:1000,background:"rgba(3,10,20,.95)",borderBottom:"1px solid rgba(0,200,240,0.1)",padding:"6px 10px",display:"flex",gap:6,alignItems:"center"}}>
         <div style={{display:"flex",gap:0,flex:1,minWidth:0}}>
-          <input
-            value={searchQuery}
-            onChange={e=>setSearchQuery(e.target.value)}
+          <input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}
             onKeyDown={e=>{if(e.key==="Enter"){const q=searchQuery.toLowerCase();const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));const reg=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));if(town){setMapCenter([town.lat,town.lng,13]);onCoordClick(town.lat,town.lng,town.name);}else if(reg){setMapCenter([reg[1].lat,reg[1].lng,9]);onRegionClick(reg[0]);}}}}
             placeholder="Search any town or region..."
-            style={{flex:1,minWidth:0,background:P2,border:`1px solid ${CYAN}33`,borderRight:"none",borderRadius:"6px 0 0 6px",padding:"6px 8px",color:TEXT,fontSize:12,outline:"none",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}
-          />
-          <button
-            onClick={()=>{const q=searchQuery.toLowerCase();const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));const reg=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));if(town){setMapCenter([town.lat,town.lng,13]);onCoordClick(town.lat,town.lng,town.name);}else if(reg){setMapCenter([reg[1].lat,reg[1].lng,9]);onRegionClick(reg[0]);}}}
-            style={{background:CYAN,border:"none",borderRadius:"0 6px 6px 0",padding:"6px 10px",color:BG,fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>Go</button>
+            style={{flex:1,background:P2,border:"1px solid rgba(0,200,240,0.2)",borderRight:"none",borderRadius:"6px 0 0 6px",padding:"6px 10px",color:TEXT,fontSize:12,outline:"none",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}/>
+          <button onClick={()=>{const q=searchQuery.toLowerCase();const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));const reg=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));if(town){setMapCenter([town.lat,town.lng,13]);onCoordClick(town.lat,town.lng,town.name);}else if(reg){setMapCenter([reg[1].lat,reg[1].lng,9]);onRegionClick(reg[0]);}}}
+            style={{background:CYAN,border:"none",borderRadius:"0 6px 6px 0",padding:"6px 12px",color:BG,fontSize:12,fontWeight:700,cursor:"pointer"}}>Go</button>
         </div>
-        {/* Toggles */}
-        <button onClick={()=>setShowHotspots(!showHotspots)}
-          style={{padding:"5px 8px",borderRadius:5,border:`1px solid ${showHotspots?RED:BORDER2}`,background:showHotspots?`${RED}15`:"transparent",color:showHotspots?RED:MUTED,fontSize:11,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
-          Hotspots
-        </button>
-        <button onClick={()=>setShowTowns(!showTowns)}
-          style={{padding:"5px 8px",borderRadius:5,border:`1px solid ${showTowns?PURPLE:BORDER2}`,background:showTowns?`${PURPLE}15`:"transparent",color:showTowns?PURPLE:MUTED,fontSize:11,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
-          Towns
-        </button>
+        <button onClick={()=>setShowHotspots(!showHotspots)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${showHotspots?RED:BORDER2}`,background:showHotspots?`${RED}15`:"transparent",color:showHotspots?RED:MUTED,fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}>Hotspots</button>
+        <button onClick={()=>setShowTowns(!showTowns)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${showTowns?PURPLE:BORDER2}`,background:showTowns?`${PURPLE}15`:"transparent",color:showTowns?PURPLE:MUTED,fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}>Towns</button>
+        <div style={{fontFamily:"'Courier New',monospace",fontSize:10,color:CYAN,whiteSpace:"nowrap"}}>{activeRegion||clickedCoord||"Click map"}</div>
       </div>
 
       {/* LIVE SATELLITE STATUS */}
       {(satLoading||satData)&&(
-        <div style={{position:"absolute",top:45,left:12,zIndex:1000,background:"rgba(8,22,42,0.95)",border:`1px solid ${satData?.earth_engine_status?.includes('CONNECTED')?GREEN:BORDER}`,borderRadius:8,padding:"7px 12px",maxWidth:280}}>
-          {satLoading&&<div style={{fontFamily:FM,fontSize:9,color:AMBER,display:"flex",alignItems:"center",gap:6}}><span style={{width:6,height:6,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/>Querying Earth Engine satellite...</div>}
-          {!satLoading&&satData&&satData.earth_engine_status?.includes('CONNECTED')&&(
+        <div style={{position:"absolute",top:48,left:12,zIndex:1000,background:"rgba(8,22,42,0.96)",border:`1px solid ${satData?.earth_engine_status?.includes("CONNECTED")?GREEN:BORDER}`,borderRadius:8,padding:"8px 12px",maxWidth:260}}>
+          {satLoading&&<div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:AMBER,display:"flex",alignItems:"center",gap:6}}><span style={{width:6,height:6,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/>Querying Earth Engine...</div>}
+          {!satLoading&&satData&&satData.earth_engine_status?.includes("CONNECTED")&&(
             <div>
-              <div style={{fontFamily:FM,fontSize:9,color:GREEN,marginBottom:4,display:"flex",alignItems:"center",gap:5}}><span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block"}}/>LIVE SENTINEL-2 · {satData.satellite_date}</div>
+              <div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:GREEN,marginBottom:5,display:"flex",alignItems:"center",gap:5}}><span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block"}}/>LIVE SENTINEL-2 · {satData.satellite_date}</div>
               <div style={{display:"flex",gap:10}}>
-                <div><div style={{fontFamily:FM,fontSize:8,color:MUTED}}>NDVI</div><div style={{fontFamily:FB,fontSize:12,fontWeight:700,color:satData.ndvi_mean>0.5?GREEN:satData.ndvi_mean>0.3?AMBER:RED}}>{satData.ndvi_mean}</div></div>
-                <div><div style={{fontFamily:FM,fontSize:8,color:MUTED}}>DEGRADATION</div><div style={{fontFamily:FB,fontSize:12,fontWeight:700,color:satData.degradation_gap>0.25?RED:GREEN}}>{satData.degradation_gap}</div></div>
-                <div><div style={{fontFamily:FM,fontSize:8,color:MUTED}}>WATER</div><div style={{fontFamily:FB,fontSize:12,fontWeight:700,color:CYAN}}>{satData.water_fraction_pct}%</div></div>
+                <div><div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED}}>NDVI</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:12,fontWeight:700,color:satData.ndvi_mean>0.5?GREEN:AMBER}}>{satData.ndvi_mean}</div></div>
+                <div><div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED}}>DEGRADATION</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:12,fontWeight:700,color:satData.degradation_gap>0.25?RED:GREEN}}>{satData.degradation_gap}</div></div>
+                <div><div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED}}>WATER</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:12,fontWeight:700,color:CYAN}}>{satData.water_fraction_pct}%</div></div>
               </div>
-              {satData.degradation_signal?.startsWith('YES')&&<div style={{fontFamily:FM,fontSize:9,color:RED,marginTop:4}}>⚠ LAND DEGRADATION DETECTED</div>}
+              {satData.degradation_signal?.startsWith("YES")&&<div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:RED,marginTop:4}}>LAND DEGRADATION DETECTED</div>}
             </div>
           )}
         </div>
@@ -311,114 +386,44 @@ function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSe
 
       {/* MAP */}
       <div style={{position:"absolute",top:42,left:0,right:0,bottom:36}}>
-        <MapContainer
-          center={[7.9465,-1.0232]}
-          zoom={7}
-          minZoom={6}
-          maxZoom={19}
-          style={{width:"100%",height:"100%"}}
-          zoomControl={true}
-          ref={mapRef}
-        >
-          {/* Real satellite imagery */}
-          <TileLayer
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            attribution='© Esri, Maxar, Earthstar Geographics'
-            maxZoom={19}
-          />
-          {/* Place labels overlay */}
-          <TileLayer
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-            attribution=''
-            maxZoom={19}
-            opacity={0.8}
-          />
-
-          {/* Click anywhere handler */}
+        <MapContainer center={[7.9465,-1.0232]} zoom={7} minZoom={6} maxZoom={19} style={{width:"100%",height:"100%"}} zoomControl={true} ref={mapRef}>
+          <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" attribution="© Esri, Maxar" maxZoom={19}/>
+          <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" attribution="" maxZoom={19} opacity={0.8}/>
           <ClickHandler onMapClick={(lat,lng)=>onCoordClick(lat,lng,null)}/>
-          {/* Fly to location when search/click sets mapCenter */}
           <FlyToHandler center={mapCenter}/>
-
-          {/* Region markers */}
           {Object.entries(REGION_COORDS).map(([name,data])=>(
-            <Marker key={name} position={[data.lat,data.lng]}
-              icon={makeRegionIcon(data.risk,data.sites,activeRegion===name)}
-              eventHandlers={{click:()=>onRegionClick(name)}}>
-              <Tooltip direction="top" className="qgif-tooltip">
-                <b style={{color:getRiskColor(data.risk)}}>{name}</b><br/>
-                Risk: <b>{data.risk}</b> · Sites: <b>{data.sites}</b><br/>
-                Mercury: <b>{data.mercury} mg/L</b> ({Math.round(data.mercury/0.001)}× WHO)<br/>
-                Population: <b>{(data.pop/1000000).toFixed(1)}M</b><br/>
-                River: {data.river}<br/>
-                <span style={{color:'#00C8F0',fontSize:10}}>Click for full intelligence →</span>
-              </Tooltip>
+            <Marker key={name} position={[data.lat,data.lng]} icon={makeRegionIcon(data.risk,data.sites,activeRegion===name)} eventHandlers={{click:()=>onRegionClick(name)}}>
+              <Tooltip direction="top" className="qgif-tooltip"><b style={{color:getRiskColor(data.risk)}}>{name}</b><br/>Risk: <b>{data.risk}</b> · Sites: <b>{data.sites}</b><br/>Mercury: <b>{data.mercury} mg/L</b><br/><span style={{color:"#00C8F0",fontSize:10}}>Click for full intelligence</span></Tooltip>
             </Marker>
           ))}
-
-          {/* Town markers */}
-          {showTowns&&GHANA_TOWNS.map(t=>(
-            <Marker key={t.name} position={[t.lat,t.lng]}
-              icon={makeTownIcon(t.type,t.name)}
-              eventHandlers={{click:()=>onCoordClick(t.lat,t.lng,t.name)}}>
-              <Tooltip direction="top" className="qgif-town">
-                <b>{t.name}</b> · {t.type}<br/>
-                Population: {t.pop.toLocaleString()}<br/>
-                Region: {t.region}<br/>
-                <span style={{color:'#00C8F0',fontSize:10}}>Click for satellite analysis →</span>
-              </Tooltip>
-            </Marker>
-          ))}
-
-          {/* Mining hotspots */}
-          {showHotspots&&MINING_HOTSPOTS.map((h,i)=>(
-            <Marker key={i} position={[h.lat,h.lng]}
-              icon={makeHotspotIcon(h.severity)}
-              eventHandlers={{click:()=>onCoordClick(h.lat,h.lng,h.name)}}>
-              <Tooltip direction="top" className="qgif-hotspot">
-                <b style={{color:'#E83A3A'}}>⛏ {h.name}</b><br/>
-                Severity: <b>{h.severity}/10</b> · Sites: <b>{h.sites}</b><br/>
-                {h.desc}<br/>
-                <span style={{color:'#FF8888',fontSize:10}}>Click for criminal network analysis →</span>
-              </Tooltip>
-            </Marker>
-          ))}
-
+          {showTowns&&GHANA_TOWNS.map(t=>(<Marker key={t.name} position={[t.lat,t.lng]} icon={makeTownIcon(t.type,t.name)} eventHandlers={{click:()=>onCoordClick(t.lat,t.lng,t.name)}}><Tooltip direction="top" className="qgif-tooltip"><b>{t.name}</b><br/>Pop: {t.pop.toLocaleString()}<br/>{t.region}</Tooltip></Marker>))}
+          {showHotspots&&MINING_HOTSPOTS.map((h,i)=>(<Marker key={i} position={[h.lat,h.lng]} icon={makeHotspotIcon(h.severity)} eventHandlers={{click:()=>onCoordClick(h.lat,h.lng,h.name)}}><Tooltip direction="top" className="qgif-hotspot"><b style={{color:RED}}>{h.name}</b><br/>Severity: {h.severity}/10<br/>{h.desc}</Tooltip></Marker>))}
         </MapContainer>
       </div>
 
       {/* LEGEND */}
-      <div style={{position:"absolute",bottom:42,right:12,zIndex:1000,background:"rgba(8,22,42,.96)",border:`1px solid ${BORDER}`,borderRadius:8,padding:"10px 14px",minWidth:160}}>
-        <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:8,letterSpacing:".08em"}}>RISK INDEX</div>
-        {[[RED,"Critical — 30+ sites"],[AMBER,"High — 11-20 sites"],["#F5C842","Medium — 3-7 sites"],[GREEN,"Low — 1-2 sites"]].map(([col,l])=>(
-          <div key={l} style={{display:"flex",alignItems:"center",gap:7,fontSize:10,fontFamily:FB,color:TEXT2,marginBottom:5}}>
+      <div style={{position:"absolute",bottom:42,right:12,zIndex:1000,background:"rgba(8,22,42,.96)",border:"1px solid rgba(0,200,240,0.1)",borderRadius:8,padding:"10px 14px"}}>
+        <div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED,marginBottom:8,letterSpacing:".08em"}}>RISK INDEX</div>
+        {[[RED,"Critical"],[AMBER,"High"],["#F5C842","Medium"],[GREEN,"Low"]].map(([col,l])=>(
+          <div key={l} style={{display:"flex",alignItems:"center",gap:7,fontSize:10,fontFamily:"-apple-system,sans-serif",color:TEXT2,marginBottom:5}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:col,boxShadow:`0 0 5px ${col}`}}/>{l}
           </div>
         ))}
-        <div style={{borderTop:`1px solid ${BORDER2}`,marginTop:8,paddingTop:8}}>
-          <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:5}}>MARKERS</div>
-          {[["🔵","Capital city"],["🟣","Major city"],["🟠","Mining town"],["⚪","Town"]].map(([icon,l])=>(
-            <div key={l} style={{fontFamily:FB,fontSize:9,color:TEXT2,marginBottom:3}}>{icon} {l}</div>
-          ))}
-        </div>
-        <div style={{borderTop:`1px solid ${BORDER2}`,marginTop:6,paddingTop:6,fontFamily:FM,fontSize:8,color:MUTED}}>
-          Numbers in circles = illegal mining sites<br/>
-          <span style={{color:CYAN}}>Click anywhere for satellite analysis</span>
-        </div>
+        <div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED,marginTop:7}}>Numbers = illegal sites</div>
       </div>
 
       {/* STATUS BAR */}
-      <div style={{position:"absolute",bottom:0,left:0,right:0,height:36,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",background:"rgba(3,10,20,.95)",borderTop:`1px solid ${BORDER}`,zIndex:1000}}>
+      <div style={{position:"absolute",bottom:0,left:0,right:0,height:36,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",background:"rgba(3,10,20,.95)",borderTop:"1px solid rgba(0,200,240,0.1)",zIndex:1000}}>
         <div style={{display:"flex",gap:16}}>
-          {[["Satellite","Sentinel-2 Live",CYAN],["Towns",`${GHANA_TOWNS.length} mapped`,PURPLE],["Hotspots",`${MINING_HOTSPOTS.length} active`,RED],["Quantum","Active",GREEN]].map(([k,v,col])=>(
-            <div key={k} style={{fontFamily:FM,fontSize:9,color:MUTED}}>{k} <span style={{color:col}}>{v}</span></div>
+          {[["Satellite","Sentinel-2",CYAN],["Towns",`${GHANA_TOWNS.length} mapped`,PURPLE],["Hotspots",`${MINING_HOTSPOTS.length} active`,RED]].map(([k,v,col])=>(
+            <div key={k} style={{fontFamily:"'Courier New',monospace",fontSize:9,color:MUTED}}>{k} <span style={{color:col}}>{v}</span></div>
           ))}
         </div>
-        <div style={{fontFamily:FM,fontSize:9,color:MUTED}}>Click anywhere on map for live satellite analysis</div>
+        <div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:MUTED}}>Click anywhere for live satellite analysis</div>
       </div>
     </div>
   );
 }
-
 
 function QuantumTab({activeRegion,setActiveRegion,qData,qLoading,qType,setQType,runQuantum}){
   return(
