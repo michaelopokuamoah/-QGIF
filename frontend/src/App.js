@@ -1170,20 +1170,40 @@ export default function App(){
         @keyframes scan{0%{top:0;opacity:0}5%{opacity:1}95%{opacity:1}100%{top:100%;opacity:0}}
         @keyframes qspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
         @keyframes hspulse{0%{r:5;opacity:.9}100%{r:22;opacity:0}}
+        @keyframes pulse{0%,100%{transform:scale(1);opacity:0.8}50%{transform:scale(1.4);opacity:0.4}}
         *{box-sizing:border-box} button{transition:background .15s,border-color .15s,color .15s}
         ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:${BG}} ::-webkit-scrollbar-thumb{background:rgba(0,200,240,.2);border-radius:2px}
         select,input,textarea{transition:border-color .15s} select:focus,input:focus,textarea:focus{border-color:${CYAN}!important}
+
+        /* MOBILE STYLES */
         @media(max-width:768px){
           .desktop-sidebar{display:none!important}
           .desktop-right{display:none!important}
           .mobile-bottom{display:flex!important}
           .tab-scroll{overflow-x:auto!important;flex-wrap:nowrap!important;justify-content:flex-start!important}
           .tab-scroll::-webkit-scrollbar{height:2px}
+          .main-grid{grid-template-columns:1fr!important}
+          .topbar-time{display:none!important}
+          .topbar-role span:last-child{display:none}
         }
         @media(min-width:769px){
           .mobile-bottom{display:none!important}
         }
-        .mobile-bottom{display:none;position:fixed;bottom:0;left:0;right:0;background:${PANEL};border-top:1px solid ${BORDER};z-index:100;flex-direction:column;max-height:55vh;overflow-y:auto}
+        .mobile-bottom{
+          display:none;
+          position:fixed;
+          bottom:0;left:0;right:0;
+          background:${PANEL};
+          border-top:1px solid ${BORDER};
+          z-index:2000;
+          flex-direction:column;
+          max-height:60vh;
+          overflow-y:auto;
+        }
+        /* Make all tabs scroll on mobile */
+        .tab-scroll{-webkit-overflow-scrolling:touch;}
+        /* Leaflet mobile touch fix */
+        .leaflet-container{touch-action:pan-x pan-y!important;}
       `}</style>
 
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 12px",background:PANEL,borderBottom:`1px solid ${BORDER}`,gap:8}}>
@@ -1204,7 +1224,7 @@ export default function App(){
         </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"180px 1fr 300px",height:"calc(100vh - 52px)",overflow:"hidden"}}>
+      <div className="main-grid" style={{display:"grid",gridTemplateColumns:"180px 1fr 300px",height:"calc(100vh - 52px)",overflow:"hidden"}}>
         <div className="desktop-sidebar" style={{background:PANEL,borderRight:`1px solid ${BORDER}`,overflowY:"auto"}}>
           <div style={{padding:"10px 8px",borderBottom:`1px solid ${BORDER2}`}}>
             <Label text="INTELLIGENCE LAYERS"/>
@@ -1420,36 +1440,85 @@ export default function App(){
 
       {/* MOBILE BOTTOM PANEL — shown only on small screens */}
       <div className="mobile-bottom">
-        {/* Live satellite status bar */}
-        {region&&satData&&satData.earth_engine_status==="CONNECTED — REAL SATELLITE DATA"&&(
-          <div style={{padding:"8px 12px",background:`${GREEN}10`,borderBottom:`1px solid ${GREEN}22`,display:"flex",gap:12,alignItems:"center"}}>
-            <span style={{fontFamily:FM,fontSize:9,color:GREEN}}>● LIVE SATELLITE {satData.satellite_date}</span>
-            <span style={{fontFamily:FM,fontSize:9,color:TEXT2}}>NDVI: {satData.ndvi_mean}</span>
-            <span style={{fontFamily:FM,fontSize:9,color:satData.degradation_gap>0.25?AMBER:GREEN}}>Gap: {satData.degradation_gap}</span>
-          </div>
-        )}
+
+        {/* Search bar on mobile */}
+        <div style={{padding:"8px 10px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:6}}>
+          <input
+            value={searchQuery}
+            onChange={e=>setSearchQuery(e.target.value)}
+            placeholder="🔍 Search town or region..."
+            style={{flex:1,background:P2,border:`1px solid ${CYAN}33`,borderRadius:6,padding:"6px 10px",color:TEXT,fontSize:12,outline:"none",fontFamily:FB}}
+          />
+          <button
+            onClick={()=>{
+              const q=searchQuery.toLowerCase();
+              const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));
+              const reg=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));
+              if(town){setMapCenter([town.lat,town.lng,13]);handleCoordClick(town.lat,town.lng,town.name);}
+              else if(reg){setMapCenter([reg[1].lat,reg[1].lng,10]);handleRegionClick(reg[0]);}
+            }}
+            style={{background:CYAN,border:"none",borderRadius:6,padding:"6px 12px",color:BG,fontSize:12,fontWeight:700,cursor:"pointer"}}>Go</button>
+        </div>
+
         {/* Region quick-select */}
-        <div style={{padding:"8px 12px",borderBottom:`1px solid ${BORDER}`}}>
-          <div style={{fontFamily:FM,fontSize:9,color:MUTED,marginBottom:6}}>TAP REGION</div>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+        <div style={{padding:"8px 10px",borderBottom:`1px solid ${BORDER}`}}>
+          <div style={{fontFamily:FM,fontSize:9,color:MUTED,marginBottom:5,letterSpacing:".06em"}}>TAP REGION FOR INTELLIGENCE</div>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
             {REGIONS.map(r=>(
               <button key={r.name} onClick={()=>handleRegionClick(r.name)}
                 style={{padding:"4px 8px",borderRadius:5,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}10`:"transparent",color:activeRegion===r.name?CYAN:MUTED,fontSize:10,fontFamily:FB,cursor:"pointer"}}>
-                {r.name}
+                {r.name.replace(' Region','')}
               </button>
             ))}
           </div>
         </div>
-        {/* Intelligence output */}
+
+        {/* Live Detection Results on mobile */}
+        {liveDetectLoading&&(
+          <div style={{padding:"12px",display:"flex",alignItems:"center",gap:8}}>
+            <span style={{width:6,height:6,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/>
+            <span style={{fontFamily:FB,fontSize:12,color:MUTED}}>Running satellite detection... (20-30 sec)</span>
+          </div>
+        )}
+        {!liveDetectLoading&&liveDetect&&!liveDetect._error&&(
+          <div style={{padding:"10px 12px",borderBottom:`1px solid ${BORDER}`}}>
+            <div style={{fontFamily:FM,fontSize:9,color:PURPLE,marginBottom:8,display:"flex",alignItems:"center",gap:5}}>
+              <span style={{width:5,height:5,borderRadius:"50%",background:PURPLE,display:"inline-block"}}/>
+              LIVE DETECTION · {liveDetect.imagery?.current_image_date} · {liveDetect.location}
+            </div>
+            {/* 3 key metrics */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:8}}>
+              <div style={{background:P2,borderRadius:6,padding:"7px 8px",textAlign:"center"}}>
+                <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:2}}>MINING</div>
+                <div style={{fontFamily:FB,fontSize:16,fontWeight:700,color:liveDetect.mining_detection?.score>70?RED:liveDetect.mining_detection?.score>40?AMBER:GREEN}}>{liveDetect.mining_detection?.score}</div>
+                <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>/100</div>
+              </div>
+              <div style={{background:P2,borderRadius:6,padding:"7px 8px",textAlign:"center"}}>
+                <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:2}}>MERCURY</div>
+                <div style={{fontFamily:FB,fontSize:16,fontWeight:700,color:liveDetect.water_contamination?.mercury_proxy_mgl>0.01?RED:GREEN}}>{liveDetect.water_contamination?.mercury_proxy_mgl}</div>
+                <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>mg/L</div>
+              </div>
+              <div style={{background:P2,borderRadius:6,padding:"7px 8px",textAlign:"center"}}>
+                <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:2}}>OUTBREAK</div>
+                <div style={{fontFamily:FB,fontSize:16,fontWeight:700,color:liveDetect.health_risk?.outbreak_probability_30days_pct>50?RED:AMBER}}>{liveDetect.health_risk?.outbreak_probability_30days_pct}%</div>
+                <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>risk</div>
+              </div>
+            </div>
+            <div style={{fontFamily:FB,fontSize:11,color:TEXT2,lineHeight:1.5,marginBottom:6}}>{liveDetect.mining_detection?.classification}</div>
+            <div style={{fontFamily:FM,fontSize:9,color:AMBER}}>⚠ Mercury proxy from satellite — not a direct measurement</div>
+          </div>
+        )}
+
+        {/* Prediction output on mobile */}
         {loading&&<div style={{padding:12}}><Spinner label="Analysing..."/></div>}
         {!loading&&prediction&&!prediction._error&&(
-          <div style={{padding:"10px 12px",overflowY:"auto"}}>
+          <div style={{padding:"10px 12px"}}>
             <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8}}>
               <Tag label={prediction.severity} color={SEV_C[prediction.severity]} bg={SEV_BG[prediction.severity]}/>
               <Tag label={prediction.confidence} color={CYAN}/>
             </div>
-            <div style={{fontFamily:FH,fontSize:15,color:TEXT,marginBottom:6,fontWeight:"normal"}}>{prediction.title}</div>
-            <div style={{fontFamily:FB,fontSize:12,color:TEXT,lineHeight:1.7,padding:"8px 10px",background:P2,borderRadius:7,borderLeft:`3px solid ${CYAN}`,marginBottom:8}}>{prediction.analysis}</div>
+            <div style={{fontFamily:FH,fontSize:14,color:TEXT,marginBottom:6,fontWeight:"normal"}}>{prediction.title}</div>
+            <div style={{fontFamily:FB,fontSize:11,color:TEXT,lineHeight:1.7,padding:"8px 10px",background:P2,borderRadius:7,borderLeft:`3px solid ${CYAN}`,marginBottom:8}}>{prediction.analysis}</div>
             {(prediction.findings||[]).slice(0,2).map((f,i)=>(
               <div key={i} style={{display:"flex",gap:8,padding:"6px 10px",background:P2,borderRadius:6,marginBottom:5}}>
                 <div style={{width:6,height:6,borderRadius:"50%",flexShrink:0,marginTop:4,background:{critical:RED,high:AMBER,medium:"#F5C842",low:GREEN}[f.severity]||CYAN}}/>
@@ -1458,9 +1527,11 @@ export default function App(){
             ))}
           </div>
         )}
-        {!loading&&!prediction&&(
+        {!loading&&!prediction&&!liveDetect&&(
           <div style={{padding:"16px 12px",textAlign:"center"}}>
-            <div style={{fontFamily:FB,fontSize:13,color:MUTED}}>Tap a region above to get intelligence</div>
+            <div style={{fontSize:28,opacity:.2,marginBottom:8}}>🛰️</div>
+            <div style={{fontFamily:FB,fontSize:12,color:MUTED}}>Tap any region above or tap anywhere on the map</div>
+            <div style={{fontFamily:FM,fontSize:10,color:MUTED,marginTop:4}}>Live satellite analysis will appear here</div>
           </div>
         )}
       </div>
