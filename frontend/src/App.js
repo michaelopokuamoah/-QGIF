@@ -1441,6 +1441,309 @@ function QuantumHubTab({
   );
 }
 
+// ── ANNOTATION TAB ──
+// ML training data collection tool
+// Labels satellite tiles for CNN/Random Forest training
+function AnnotateTab(){
+  const ss={fontFamily:"Inter,'Segoe UI',system-ui,sans-serif"};
+  const sm={fontFamily:"'DM Mono','Fira Mono',monospace"};
+  const API="https://qgif-backend.onrender.com";
+
+  const LABELS=[
+    {key:"mining",label:"Mining",color:"#EF4444",desc:"Illegal mining pit, excavation, or tailings"},
+    {key:"forest",label:"Forest",color:"#10B981",desc:"Dense healthy vegetation or forest cover"},
+    {key:"water",label:"Water",color:"#0EA5E9",desc:"River, lake, or water body"},
+    {key:"farmland",label:"Farmland",color:"#F59E0B",desc:"Agricultural land, crops, or farm clearing"},
+    {key:"settlement",label:"Settlement",color:"#8B5CF6",desc:"Town, village, buildings, or urban area"},
+  ];
+
+  const KNOWN_MINING=[
+    {name:"Tarkwa (Western Region)",lat:5.31,lng:-1.99,type:"mining"},
+    {name:"Obuasi (Ashanti Region)",lat:6.20,lng:-1.68,type:"mining"},
+    {name:"Prestea (Western Region)",lat:5.43,lng:-2.14,type:"mining"},
+    {name:"Bogoso (Western Region)",lat:5.54,lng:-2.07,type:"mining"},
+    {name:"Dunkwa (Central Region)",lat:5.97,lng:-1.78,type:"mining"},
+    {name:"Konongo (Ashanti Region)",lat:6.62,lng:-1.22,type:"mining"},
+    {name:"Bibiani (Western Region)",lat:6.46,lng:-2.32,type:"mining"},
+    {name:"Amenfi (Western Region)",lat:5.75,lng:-2.35,type:"mining"},
+  ];
+
+  const KNOWN_CLEAN=[
+    {name:"Lawra (Upper West Region)",lat:10.63,lng:-2.91,type:"forest"},
+    {name:"Wa (Upper West Region)",lat:10.06,lng:-2.50,type:"forest"},
+    {name:"Damongo (Northern Region)",lat:9.08,lng:-1.82,type:"farmland"},
+    {name:"Bolgatanga (Upper East Region)",lat:10.78,lng:-0.85,type:"farmland"},
+    {name:"Keta (Volta Region)",lat:5.91,lng:0.99,type:"water"},
+    {name:"Winneba (Central Region)",lat:5.35,lng:-0.63,type:"settlement"},
+    {name:"Cape Coast (Central Region)",lat:5.10,lng:-1.24,type:"settlement"},
+    {name:"Hohoe (Volta Region)",lat:7.15,lng:0.47,type:"forest"},
+  ];
+
+  const ALL_LOCATIONS=[...KNOWN_MINING,...KNOWN_CLEAN];
+
+  const [annotations,setAnnotations]=useState(()=>{
+    try{const s=localStorage.getItem("qgif_annotations");return s?JSON.parse(s):[];}
+    catch(e){return [];}
+  });
+  const [currentIdx,setCurrentIdx]=useState(0);
+  const [loading,setLoading]=useState(false);
+  const [currentData,setCurrentData]=useState(null);
+  const [error,setError]=useState(null);
+  const [annotatorName,setAnnotatorName]=useState("Maxwell");
+  const [showExport,setShowExport]=useState(false);
+
+  const saveAnnotations=(ann)=>{
+    setAnnotations(ann);
+    try{localStorage.setItem("qgif_annotations",JSON.stringify(ann));}catch(e){}
+  };
+
+  const loadLocation=async(idx)=>{
+    const loc=ALL_LOCATIONS[idx];
+    if(!loc)return;
+    setLoading(true);setCurrentData(null);setError(null);
+    try{
+      const r=await fetch(API+"/detect-live",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({lat:loc.lat,lng:loc.lng,name:loc.name})
+      });
+      const d=await r.json();
+      setCurrentData({...d,location:loc});
+    }catch(e){
+      setError("Could not load satellite data: "+e.message);
+    }finally{setLoading(false);}
+  };
+
+  useEffect(()=>{loadLocation(currentIdx);},[currentIdx]);
+
+  const handleLabel=(labelKey)=>{
+    if(!currentData)return;
+    const loc=ALL_LOCATIONS[currentIdx];
+    const ann={
+      id:Date.now(),
+      annotator:annotatorName,
+      annotated_at:new Date().toISOString(),
+      location_name:loc.name,
+      lat:loc.lat,
+      lng:loc.lng,
+      label:labelKey,
+      suggested_label:loc.type,
+      satellite_date:currentData.current_date||"",
+      ndvi_mean:currentData.ndvi_mean||0,
+      ndvi_p10:currentData.ndvi_p10||0,
+      bsi_mean:currentData.bsi_mean||0,
+      bsi_change:currentData.bsi_change_mean||0,
+      mndwi_mean:currentData.mndwi_mean||0,
+      ior_mean:currentData.ior_mean||0,
+      cmr_mean:currentData.cmr_mean||0,
+      ndvi_change:currentData.ndvi_change_mean||0,
+      degradation_gap:Math.round(((currentData.ndvi_mean||0)-(currentData.ndvi_p10||0))*1000)/1000,
+      water_fraction:currentData.water_fraction_pct||0,
+    };
+    const updated=[...annotations,ann];
+    saveAnnotations(updated);
+    // Move to next location
+    if(currentIdx<ALL_LOCATIONS.length-1){
+      setCurrentIdx(currentIdx+1);
+    }else{
+      setCurrentIdx(0); // Loop back
+    }
+  };
+
+  const skipLocation=()=>{
+    if(currentIdx<ALL_LOCATIONS.length-1) setCurrentIdx(currentIdx+1);
+    else setCurrentIdx(0);
+  };
+
+  const exportCSV=()=>{
+    if(annotations.length===0)return;
+    const headers=["id","annotator","annotated_at","location_name","lat","lng","label","suggested_label","satellite_date","ndvi_mean","ndvi_p10","bsi_mean","bsi_change","mndwi_mean","ior_mean","cmr_mean","ndvi_change","degradation_gap","water_fraction"];
+    const rows=annotations.map(a=>headers.map(h=>a[h]??'').join(','));
+    const csv=[headers.join(','),...rows].join('\n');
+    const blob=new Blob([csv],{type:'text/csv'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download='qgif_training_dataset.csv';
+    document.body.appendChild(a);a.click();
+    document.body.removeChild(a);URL.revokeObjectURL(url);
+  };
+
+  const clearAnnotations=()=>{
+    if(window.confirm('Clear all annotations? This cannot be undone.')){
+      saveAnnotations([]);
+    }
+  };
+
+  const counts=LABELS.reduce((acc,l)=>{
+    acc[l.key]=annotations.filter(a=>a.label===l.key).length;
+    return acc;
+  },{});
+  const total=annotations.length;
+  const target=500;
+  const progress=Math.min(100,Math.round((total/target)*100));
+  const loc=ALL_LOCATIONS[currentIdx];
+
+  return(
+    <div className="tab-content" style={{background:BG}}>
+      <div className="tab-inner" style={{margin:"0 auto"}}>
+
+        {/* Header */}
+        <div style={{marginBottom:20}}>
+          <div style={{...ss,fontSize:18,fontWeight:600,color:TEXT,marginBottom:4,letterSpacing:"-.02em"}}>ML Training Data — Annotation Tool</div>
+          <div style={{...sm,fontSize:9,color:MUTED,letterSpacing:".1em",textTransform:"uppercase"}}>Label satellite locations to train the mining detection model</div>
+        </div>
+
+        {/* Progress */}
+        <div className="card" style={{marginBottom:16}}>
+          <div className="section-label">Dataset Progress</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div style={{...sm,fontSize:13,color:CYAN,fontWeight:500}}>{total} labeled</div>
+            <div style={{...sm,fontSize:12,color:MUTED}}>{target - total} remaining to reach target of {target}</div>
+          </div>
+          <div style={{height:8,background:"rgba(14,165,233,.1)",borderRadius:4,marginBottom:12,overflow:"hidden"}}>
+            <div style={{height:"100%",width:`${progress}%`,background:`linear-gradient(90deg,${CYAN},${GREEN})`,borderRadius:4,transition:"width .5s ease"}}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6}}>
+            {LABELS.map(l=>(
+              <div key={l.key} style={{background:BG,borderRadius:6,padding:"8px 6px",textAlign:"center",border:`1px solid ${l.color}22`}}>
+                <div style={{...sm,fontSize:18,fontWeight:600,color:l.color}}>{counts[l.key]||0}</div>
+                <div style={{...sm,fontSize:9,color:MUTED,marginTop:2}}>{l.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Annotator name */}
+        <div className="card" style={{marginBottom:16,display:"flex",gap:10,alignItems:"center"}}>
+          <div style={{...sm,fontSize:10,color:MUTED,whiteSpace:"nowrap"}}>ANNOTATOR</div>
+          <input className="input" value={annotatorName} onChange={e=>setAnnotatorName(e.target.value)} style={{maxWidth:200}}/>
+          <div style={{...sm,fontSize:10,color:MUTED,flex:1}}>Location {currentIdx+1} of {ALL_LOCATIONS.length}</div>
+          <button className="btn-outline btn btn-sm" onClick={skipLocation}>Skip</button>
+        </div>
+
+        {/* Current location */}
+        <div className="card" style={{marginBottom:16,borderColor:`rgba(14,165,233,.25)`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
+            <div>
+              <div style={{...sm,fontSize:9,color:MUTED,marginBottom:4}}>CURRENT LOCATION TO LABEL</div>
+              <div style={{...ss,fontSize:15,fontWeight:600,color:TEXT}}>{loc?.name}</div>
+              <div style={{...sm,fontSize:10,color:MUTED,marginTop:2}}>{loc?.lat}°N, {loc?.lng}°E</div>
+            </div>
+            <div style={{background:`${loc?.type==="mining"?RED:GREEN}14`,border:`1px solid ${loc?.type==="mining"?RED:GREEN}44`,borderRadius:6,padding:"4px 10px"}}>
+              <div style={{...sm,fontSize:9,color:MUTED}}>SUGGESTED</div>
+              <div style={{...sm,fontSize:11,fontWeight:600,color:loc?.type==="mining"?RED:GREEN}}>{loc?.type?.toUpperCase()}</div>
+            </div>
+          </div>
+
+          {/* Satellite data */}
+          {loading&&<div style={{...ss,fontSize:12,color:AMBER,display:"flex",alignItems:"center",gap:6,marginBottom:12}}><span style={{width:6,height:6,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/>Querying Earth Engine for satellite data...</div>}
+          {error&&<div style={{...ss,fontSize:12,color:RED,marginBottom:12}}>{error}</div>}
+
+          {currentData&&!loading&&(
+            <div>
+              <div style={{...sm,fontSize:9,color:GREEN,marginBottom:8,display:"flex",alignItems:"center",gap:5}}>
+                <span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block"}}/>
+                LIVE SENTINEL-2 · {currentData.current_date||""}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(80px,1fr))",gap:6,marginBottom:12}}>
+                {[
+                  ["NDVI",currentData.ndvi_mean,v=>v>0.5?GREEN:v>0.3?AMBER:RED],
+                  ["BSI",currentData.bsi_mean,v=>v>0.2?RED:v>0?AMBER:GREEN],
+                  ["BSI Chg",currentData.bsi_change_mean,v=>v>0.05?RED:v>0?AMBER:GREEN],
+                  ["MNDWI",currentData.mndwi_mean,v=>v>0.1?CYAN:GREEN],
+                  ["Iron Ox",currentData.ior_mean,v=>v>1.5?RED:v>1.2?AMBER:GREEN],
+                  ["Deg Gap",Math.round(((currentData.ndvi_mean||0)-(currentData.ndvi_p10||0))*1000)/1000,v=>v>0.3?RED:v>0.15?AMBER:GREEN],
+                ].map(([label,val,colorFn])=>(
+                  <div key={label} className="stat-box">
+                    <div className="stat-label">{label}</div>
+                    <div style={{...sm,fontSize:14,fontWeight:600,color:colorFn(val||0)}}>{Math.round((val||0)*1000)/1000}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Label buttons */}
+          <div style={{...sm,fontSize:9,color:MUTED,marginBottom:8,letterSpacing:".08em"}}>SELECT THE CORRECT LABEL FOR THIS LOCATION:</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {LABELS.map(l=>(
+              <button key={l.key} onClick={()=>handleLabel(l.key)}
+                disabled={loading||!currentData}
+                style={{flex:1,minWidth:100,padding:"12px 8px",borderRadius:7,border:`2px solid ${l.color}`,background:`${l.color}12`,color:l.color,fontSize:13,fontWeight:700,cursor:loading||!currentData?"not-allowed":"pointer",fontFamily:"Inter,'Segoe UI',sans-serif",transition:"all .15s",opacity:loading||!currentData?.0.5:1}}>
+                {l.label}
+                <div style={{fontSize:10,fontWeight:400,opacity:.8,marginTop:2}}>{l.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Location list */}
+        <div className="card" style={{marginBottom:16}}>
+          <div className="section-label">All Locations ({ALL_LOCATIONS.length} total)</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:6}}>
+            {ALL_LOCATIONS.map((l,i)=>{
+              const alreadyLabeled=annotations.filter(a=>a.location_name===l.name).length;
+              return(
+                <div key={i} onClick={()=>setCurrentIdx(i)}
+                  style={{padding:"8px 10px",borderRadius:6,cursor:"pointer",border:`1px solid ${i===currentIdx?CYAN:BORDER}`,background:i===currentIdx?`${CYAN}0A`:BG,transition:"all .15s"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div style={{...ss,fontSize:11,fontWeight:i===currentIdx?600:400,color:i===currentIdx?CYAN:TEXT}}>{l.name}</div>
+                    {alreadyLabeled>0&&<div style={{...sm,fontSize:9,color:GREEN}}>✓ {alreadyLabeled}</div>}
+                  </div>
+                  <div style={{...sm,fontSize:9,color:l.type==="mining"?RED:GREEN,marginTop:2}}>{l.type}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Export section */}
+        <div className="card" style={{borderColor:`rgba(16,185,129,.3)`}}>
+          <div className="section-label">Export Dataset for Google Colab Training</div>
+          <div style={{...ss,fontSize:12,color:TEXT2,marginBottom:12,lineHeight:1.6}}>
+            When you have labeled enough locations, export the dataset as a CSV file. Upload it to Google Colab to train the machine learning model.
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:total>0?12:0}}>
+            <button className="btn-primary btn" onClick={exportCSV} disabled={total===0}>
+              Export {total} Annotations as CSV
+            </button>
+            {total>0&&<button className="btn-danger btn" onClick={clearAnnotations}>Clear All</button>}
+          </div>
+          {total>0&&(
+            <div style={{...sm,fontSize:10,color:MUTED,lineHeight:1.7}}>
+              Dataset contains {total} labeled locations · {counts.mining||0} mining · {counts.forest||0} forest · {counts.water||0} water · {counts.farmland||0} farmland · {counts.settlement||0} settlement
+            </div>
+          )}
+          {total===0&&<div style={{...sm,fontSize:11,color:MUTED}}>Start labeling locations above to build your training dataset.</div>}
+        </div>
+
+        {/* Instructions */}
+        <div className="card" style={{marginTop:16}}>
+          <div className="section-label">How To Use This Tool</div>
+          {[
+            ["1","Load","Each location automatically loads its live Sentinel-2 satellite data from Google Earth Engine. Wait for the spectral values to appear."],
+            ["2","Read the data","Look at the NDVI, BSI, and Degradation Gap values. High BSI + low NDVI + high degradation gap = likely mining."],
+            ["3","Label","Click the correct label button. The suggested label is shown but you make the final decision based on the satellite data and your knowledge of the location."],
+            ["4","Repeat","Work through all locations. You can revisit any location by clicking it in the list below. Aim for at least 100 mining examples and 100 non-mining examples."],
+            ["5","Export","When you have 200-500 labels, export the CSV and upload it to Google Colab to train the model."],
+          ].map(([n,title,desc])=>(
+            <div key={n} style={{display:"flex",gap:12,marginBottom:10,alignItems:"flex-start"}}>
+              <div style={{width:24,height:24,borderRadius:6,background:`${CYAN}14`,border:`1px solid ${CYAN}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                <span style={{...sm,fontSize:11,fontWeight:600,color:CYAN}}>{n}</span>
+              </div>
+              <div>
+                <div style={{...ss,fontSize:12,fontWeight:600,color:TEXT,marginBottom:2}}>{title}</div>
+                <div style={{...ss,fontSize:11,color:MUTED,lineHeight:1.5}}>{desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{height:40}}/>
+      </div>
+    </div>
+  );
+}
+
 export default function App(){
   const [role,setRole]=useState(ROLES[0]);
   const [layer,setLayer]=useState(LAYERS[0]);
@@ -1492,7 +1795,7 @@ export default function App(){
   const [liveDetect,setLiveDetect]=useState(null);
   const [liveDetectLoading,setLiveDetectLoading]=useState(false);
 
-  const TABS=["Map","Intelligence","Quantum","Legal & Evidence","Monitoring","Timeline"];
+  const TABS=["Map","Intelligence","Quantum","Legal & Evidence","Monitoring","Timeline","Annotate"];
 
   useEffect(()=>{const t=setInterval(()=>setTime(new Date().toLocaleTimeString("en-GB")+" GMT"),1000);return()=>clearInterval(t);},[]);
 
@@ -1698,6 +2001,7 @@ export default function App(){
           <div style={{display:activeTab==="Legal & Evidence"?"flex":"none",width:"100%",height:"100%"}}><LawyerTab lawyerData={lawyerData} lawyerLoading={lawyerLoading} runLawyer={runLawyer}/></div>
           <div style={{display:activeTab==="Monitoring"?"flex":"none",width:"100%",height:"100%",overflowY:"auto"}}><MonitoringTab monitorData={monitorData} monitorLoading={monitorLoading} runMonitor={runMonitor} dashData={dashData} dashLoading={dashLoading} loadDash={loadDash}/></div>
           <div style={{display:activeTab==="Timeline"?"flex":"none",width:"100%",height:"100%"}}><TimelineTab timelineData={timelineData} timelineLoading={timelineLoading} runTimeline={runTimeline} activeRegion={activeRegion}/></div>
+          <div style={{display:activeTab==="Annotate"?"flex":"none",width:"100%",height:"100%"}}><AnnotateTab/></div>
         </div>
 
         <div className="desktop-right" style={{background:PANEL,borderLeft:`1px solid ${BORDER}`,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -1959,6 +2263,7 @@ export default function App(){
         {activeTab==="Legal & Evidence"&&<LawyerTab lawyerData={lawyerData} lawyerLoading={lawyerLoading} runLawyer={runLawyer}/>}
         {activeTab==="Monitoring"&&<MonitoringTab monitorData={monitorData} monitorLoading={monitorLoading} runMonitor={runMonitor} dashData={dashData} dashLoading={dashLoading} loadDash={loadDash}/>}
         {activeTab==="Timeline"&&<TimelineTab timelineData={timelineData} timelineLoading={timelineLoading} runTimeline={runTimeline} activeRegion={activeRegion}/>}
+        {activeTab==="Annotate"&&<AnnotateTab/>}
       </div>
       )}
 
