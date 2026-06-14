@@ -1106,6 +1106,8 @@ export default function App(){
   const [criminalLoading,setCriminalLoading]=useState(false);
   const [satData,setSatData]=useState(null);
   const [satLoading,setSatLoading]=useState(false);
+  const [liveDetect,setLiveDetect]=useState(null);
+  const [liveDetectLoading,setLiveDetectLoading]=useState(false);
 
   const TABS=["Map","Quantum Optimizer","Scenario Simulator","Risk Matrix","Disease Intelligence","Digital Lawyer","Dam Risk","Crop Insurance","Air Quality","Criminal Network"];
 
@@ -1138,12 +1140,22 @@ export default function App(){
   const handleCoordClick=useCallback(async(lat,lng,name)=>{
     const label=name||`${lat.toFixed(4)}°N, ${Math.abs(lng).toFixed(4)}°W`;
     setClickedCoord(label);setActiveRegion(null);
-    setSatLoading(true);setSatData(null);
+    setLiveDetectLoading(true);setLiveDetect(null);setSatData(null);
     try{
-      const r=await fetch("https://qgif-backend.onrender.com/satellite-check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({region:null,lat,lng})});
-      const d=await r.json();setSatData(d);
-    }catch(e){setSatData({_error:e.message});}
-    finally{setSatLoading(false);}
+      const r=await fetch("https://qgif-backend.onrender.com/detect-live",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lat,lng,name:label,radius:5})});
+      const d=await r.json();setLiveDetect(d);
+      // Also set satData from the detection result for the existing satellite panel
+      if(d.satellite_indices){setSatData({
+        earth_engine_status:'CONNECTED — REAL SATELLITE DATA',
+        satellite_date:d.imagery?.current_image_date,
+        ndvi_mean:d.satellite_indices.ndvi_mean,
+        ndvi_p10:d.satellite_indices.ndvi_p10,
+        degradation_gap:Math.round((d.satellite_indices.ndvi_mean - d.satellite_indices.ndvi_p10)*1000)/1000,
+        water_fraction_pct:d.satellite_indices.water_coverage_pct,
+        degradation_signal:d.mining_detection.score>50?'YES — land degradation detected':'No strong contrast signal',
+      });}
+    }catch(e){setLiveDetect({_error:e.message});}
+    finally{setLiveDetectLoading(false);}
     // Also run prediction for nearest region
     const regionDists=Object.entries(REGION_COORDS).map(([rname,rd])=>({rname,dist:Math.sqrt(Math.pow(rd.lat-lat,2)+Math.pow(rd.lng-lng,2))}));
     const nearest=regionDists.sort((a,b)=>a.dist-b.dist)[0];
@@ -1214,7 +1226,7 @@ export default function App(){
         </div>
 
         <div style={{overflow:"hidden",position:"relative"}}>
-          <div style={{display:activeTab==="Map"?"block":"none",width:"100%",height:"100%"}}><MapTab layer={layer} activeRegion={activeRegion} onRegionClick={handleRegionClick} onCoordClick={handleCoordClick} searchQuery={searchQuery} setSearchQuery={setSearchQuery} mapCenter={mapCenter} setMapCenter={setMapCenter} showHotspots={showHotspots} setShowHotspots={setShowHotspots} showTowns={showTowns} setShowTowns={setShowTowns} clickedCoord={clickedCoord} satLoading={satLoading} satData={satData}/></div>
+          <div style={{display:activeTab==="Map"?"block":"none",width:"100%",height:"100%"}}><MapTab layer={layer} activeRegion={activeRegion} onRegionClick={handleRegionClick} onCoordClick={handleCoordClick} searchQuery={searchQuery} setSearchQuery={setSearchQuery} mapCenter={mapCenter} setMapCenter={setMapCenter} showHotspots={showHotspots} setShowHotspots={setShowHotspots} showTowns={showTowns} setShowTowns={setShowTowns} clickedCoord={clickedCoord} satLoading={liveDetectLoading} satData={satData}/></div>
           <div style={{display:activeTab==="Quantum Optimizer"?"flex":"none",width:"100%",height:"100%"}}><QuantumTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} qData={qData} qLoading={qLoading} qType={qType} setQType={setQType} runQuantum={runQuantum}/></div>
           <div style={{display:activeTab==="Scenario Simulator"?"flex":"none",width:"100%",height:"100%"}}><ScenarioTab scRegion={scRegion} setScRegion={setScRegion} scScenario={scScenario} setScScenario={setScScenario} scIntensity={scIntensity} setScIntensity={setScIntensity} scData={scData} scLoading={scLoading} runScenario={runScenario}/></div>
           <div style={{display:activeTab==="Risk Matrix"?"flex":"none",width:"100%",height:"100%"}}><RiskTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} riskData={riskData} riskLoading={riskLoading} runRisk={runRisk}/></div>
@@ -1265,6 +1277,96 @@ export default function App(){
                       {satData.degradation_signal?.startsWith("YES")?"⚠ ":""}{satData.degradation_signal}
                     </div>
                   </div>
+                )}
+              </div>
+            )}
+            {/* LIVE DETECTION PANEL — shows when clicking map */}
+            {(liveDetectLoading||liveDetect)&&(
+              <div style={{background:`${PURPLE}08`,border:`1px solid ${PURPLE}33`,borderRadius:8,padding:"10px 12px",marginBottom:12}}>
+                <div style={{fontFamily:FM,fontSize:9,color:PURPLE,letterSpacing:".08em",marginBottom:6,display:"flex",alignItems:"center",gap:5}}>
+                  <span style={{width:5,height:5,borderRadius:"50%",background:liveDetectLoading?AMBER:PURPLE,display:"inline-block",animation:liveDetectLoading?"blink 1s infinite":"none"}}/>
+                  LIVE SATELLITE DETECTION ENGINE
+                  {liveDetect&&liveDetect.imagery&&<span style={{color:CYAN,marginLeft:6}}>{liveDetect.imagery.current_image_date}</span>}
+                </div>
+                {liveDetectLoading&&<div style={{fontFamily:FB,fontSize:11,color:MUTED}}>Running 7-index satellite analysis... (20-30 seconds)</div>}
+                {!liveDetectLoading&&liveDetect&&!liveDetect._error&&(
+                  <div>
+                    {/* Mining Detection */}
+                    <div style={{background:P2,borderRadius:7,padding:"8px 10px",marginBottom:8}}>
+                      <div style={{fontFamily:FM,fontSize:8,color:RED,marginBottom:4,letterSpacing:".06em"}}>⛏ MINING ACTIVITY DETECTION</div>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                        <div style={{fontFamily:FB,fontSize:18,fontWeight:700,color:liveDetect.mining_detection?.score>70?RED:liveDetect.mining_detection?.score>40?AMBER:GREEN}}>{liveDetect.mining_detection?.score}<span style={{fontSize:10,color:MUTED}}>/100</span></div>
+                        <Tag label={liveDetect.mining_detection?.level||'--'} color={SEV_C[liveDetect.mining_detection?.level]||MUTED}/>
+                      </div>
+                      <div style={{height:5,background:"rgba(255,255,255,.05)",borderRadius:3,overflow:"hidden",marginBottom:6}}>
+                        <div style={{height:"100%",width:`${liveDetect.mining_detection?.score||0}%`,background:liveDetect.mining_detection?.score>70?RED:liveDetect.mining_detection?.score>40?AMBER:GREEN,borderRadius:3}}/>
+                      </div>
+                      <div style={{fontFamily:FB,fontSize:11,color:TEXT2,lineHeight:1.5}}>{liveDetect.mining_detection?.classification}</div>
+                      {liveDetect.mining_detection?.new_clearing_ha>0&&(
+                        <div style={{fontFamily:FM,fontSize:9,color:AMBER,marginTop:4}}>
+                          New clearing since {liveDetect.imagery?.baseline_image_date}: <b>{liveDetect.mining_detection.new_clearing_ha} ha</b> · Forest loss: <b>{liveDetect.mining_detection.forest_loss_pct}%</b>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Water Contamination */}
+                    <div style={{background:P2,borderRadius:7,padding:"8px 10px",marginBottom:8}}>
+                      <div style={{fontFamily:FM,fontSize:8,color:CYAN,marginBottom:4,letterSpacing:".06em"}}>💧 WATER CONTAMINATION PROXY</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:6}}>
+                        <div>
+                          <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>Turbidity proxy</div>
+                          <div style={{fontFamily:FB,fontSize:12,fontWeight:700,color:liveDetect.water_contamination?.turbidity_proxy_ntu>200?RED:GREEN}}>{liveDetect.water_contamination?.turbidity_proxy_ntu} NTU</div>
+                        </div>
+                        <div>
+                          <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>Mercury proxy</div>
+                          <div style={{fontFamily:FB,fontSize:12,fontWeight:700,color:liveDetect.water_contamination?.mercury_proxy_mgl>0.01?RED:GREEN}}>{liveDetect.water_contamination?.mercury_proxy_mgl} mg/L</div>
+                        </div>
+                        <div>
+                          <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>× WHO limit</div>
+                          <div style={{fontFamily:FB,fontSize:12,fontWeight:700,color:liveDetect.water_contamination?.mercury_proxy_times_who>5?RED:GREEN}}>{liveDetect.water_contamination?.mercury_proxy_times_who}×</div>
+                        </div>
+                      </div>
+                      <div style={{fontFamily:FM,fontSize:8,color:AMBER}}>⚠ PROXY — Not a direct chemical measurement. Water testing required.</div>
+                    </div>
+
+                    {/* Health Risk */}
+                    <div style={{background:P2,borderRadius:7,padding:"8px 10px",marginBottom:8}}>
+                      <div style={{fontFamily:FM,fontSize:8,color:GREEN,marginBottom:4,letterSpacing:".06em"}}>🏥 HEALTH RISK FROM SATELLITE</div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                        <div>
+                          <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>Outbreak probability</div>
+                          <div style={{fontFamily:FB,fontSize:14,fontWeight:700,color:liveDetect.health_risk?.outbreak_probability_30days_pct>50?RED:AMBER}}>{liveDetect.health_risk?.outbreak_probability_30days_pct}%</div>
+                        </div>
+                        <div>
+                          <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>Neurological risk</div>
+                          <div style={{fontFamily:FB,fontSize:14,fontWeight:700,color:liveDetect.health_risk?.neurological_risk_pct>50?RED:GREEN}}>{liveDetect.health_risk?.neurological_risk_pct}%</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Change period */}
+                    <div style={{fontFamily:FM,fontSize:9,color:MUTED,lineHeight:1.6}}>
+                      Change detection: <span style={{color:CYAN}}>{liveDetect.imagery?.baseline_image_date}</span> → <span style={{color:CYAN}}>{liveDetect.imagery?.current_image_date}</span><br/>
+                      Indices used: BSI, MNDWI, Iron Oxide Ratio, Clay Mineral Ratio, NDVI Change<br/>
+                      <span style={{color:GREEN}}>All calculated live from Sentinel-2 satellite pixels</span>
+                    </div>
+
+                    {/* Actions */}
+                    {liveDetect.what_to_do_next&&(
+                      <div style={{marginTop:8}}>
+                        <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:6,letterSpacing:".06em"}}>RECOMMENDED ACTIONS</div>
+                        {liveDetect.what_to_do_next.map((a,i)=>(
+                          <div key={i} style={{display:"flex",gap:7,padding:"5px 8px",background:BG,borderRadius:5,marginBottom:4}}>
+                            <span style={{color:CYAN,flexShrink:0,fontSize:10}}>→</span>
+                            <span style={{fontFamily:FB,fontSize:10,color:TEXT2,lineHeight:1.5}}>{a}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!liveDetectLoading&&liveDetect&&liveDetect._error&&(
+                  <div style={{fontFamily:FB,fontSize:11,color:AMBER}}>Detection error: {liveDetect._error}</div>
                 )}
               </div>
             )}
