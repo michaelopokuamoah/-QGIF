@@ -653,8 +653,116 @@ All values are satellite-derived. Water contamination and health risk values are
 });
 
 // ============================================================
-// SATELLITE CHECK — Test real Earth Engine connection
+// HISTORICAL TIMELINE — Year-by-year satellite comparison
+// Shows how degradation has changed from 2020 to present
 // ============================================================
+
+app.post('/historical-timeline', async (req, res) => {
+  const { lat, lng, name } = req.body;
+  if (!lat || !lng) return res.status(400).json({ error: 'lat and lng required' });
+  if (!EE_READY) return res.json({ status: 'EARTH ENGINE NOT CONNECTED' });
+
+  const years = [2020, 2021, 2022, 2023, 2024, 2025];
+  const results = [];
+
+  for (const year of years) {
+    try {
+      const point = ee.Geometry.Point([parseFloat(lng), parseFloat(lat)]);
+      const area = point.buffer(5000);
+      const startDate = `${year}-01-01`;
+      const endDate = `${year}-12-31`;
+
+      const image = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+        .filterBounds(area)
+        .filterDate(startDate, endDate)
+        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+        .sort('CLOUDY_PIXEL_PERCENTAGE')
+        .first();
+
+      const ndvi = image.normalizedDifference(['B8', 'B4']);
+      const mndwi = image.normalizedDifference(['B3', 'B11']);
+      const waterMask = mndwi.lte(0.1);
+      const ndviLand = ndvi.updateMask(waterMask);
+      const bsi = image.expression(
+        '((Red+SWIR1)-(NIR+Blue))/((Red+SWIR1)+(NIR+Blue))',
+        {Red:image.select('B4'),SWIR1:image.select('B11'),NIR:image.select('B8'),Blue:image.select('B2')}
+      ).rename('bsi').updateMask(waterMask);
+
+      const stats = ee.Dictionary({
+        ndvi_mean: ndviLand.reduceRegion({reducer:ee.Reducer.mean(),geometry:area,scale:30,maxPixels:1e9}).get('nd'),
+        ndvi_p10:  ndviLand.reduceRegion({reducer:ee.Reducer.percentile([10]),geometry:area,scale:30,maxPixels:1e9}).get('nd'),
+        bsi_mean:  bsi.reduceRegion({reducer:ee.Reducer.mean(),geometry:area,scale:30,maxPixels:1e9}).get('bsi'),
+        date: image.get('system:time_start'),
+      });
+
+      const raw = await new Promise((resolve, reject) => {
+        ee.data.computeValue(stats, (result, err) => {
+          if (err) reject(new Error(err));
+          else resolve(result);
+        });
+      });
+
+      const ndviMean = Math.round((raw.ndvi_mean||0) * 1000) / 1000;
+      const ndviP10 = Math.round((raw.ndvi_p10||0) * 1000) / 1000;
+      const bsiMean = Math.round((raw.bsi_mean||0) * 1000) / 1000;
+      const degradationGap = Math.round((ndviMean - ndviP10) * 1000) / 1000;
+      const forestCover = Math.max(5, Math.min(95, Math.round(((ndviMean - 0.15) / 0.65) * 90)));
+      const miningScore = Math.min(100, Math.max(0, Math.round(
+        (Math.max(0, (bsiMean + 0.5) / 1.0) * 60 * 0.5) +
+        (Math.min(1, Math.max(0, degradationGap * 2)) * 100 * 0.5)
+      )));
+
+      results.push({
+        year,
+        satellite_date: raw.date ? new Date(raw.date).toISOString().split('T')[0] : `${year}`,
+        ndvi_mean: ndviMean,
+        ndvi_p10: ndviP10,
+        bsi_mean: bsiMean,
+        degradation_gap: degradationGap,
+        forest_cover_pct: forestCover,
+        mining_score: miningScore,
+        status: 'OK',
+      });
+
+      console.log(`  Timeline ${year}: NDVI=${ndviMean}, gap=${degradationGap}, mining=${miningScore}`);
+
+    } catch(e) {
+      results.push({ year, status: 'NO_DATA', error: e.message });
+      console.log(`  Timeline ${year}: NO DATA — ${e.message}`);
+    }
+  }
+
+  // Calculate trend
+  const validResults = results.filter(r => r.status === 'OK');
+  let trend = null;
+  if (validResults.length >= 2) {
+    const first = validResults[0];
+    const last = validResults[validResults.length - 1];
+    trend = {
+      ndvi_change: Math.round((last.ndvi_mean - first.ndvi_mean) * 1000) / 1000,
+      forest_cover_change: last.forest_cover_pct - first.forest_cover_pct,
+      mining_score_change: last.mining_score - first.mining_score,
+      degradation_change: Math.round((last.degradation_gap - first.degradation_gap) * 1000) / 1000,
+      years_covered: `${first.year}–${last.year}`,
+      direction: last.ndvi_mean < first.ndvi_mean ? 'DEGRADING' : 'RECOVERING',
+      assessment: last.ndvi_mean < first.ndvi_mean
+        ? `Vegetation has declined by ${Math.abs(Math.round((last.ndvi_mean-first.ndvi_mean)*100))}% since ${first.year}. Mining activity signature has ${last.mining_score > first.mining_score ? 'increased' : 'decreased'}.`
+        : `Vegetation has improved by ${Math.round((last.ndvi_mean-first.ndvi_mean)*100)}% since ${first.year}.`,
+    };
+  }
+
+  res.json({
+    location: name || `${lat}, ${lng}`,
+    coordinates: { lat: parseFloat(lat), lng: parseFloat(lng) },
+    analysis_radius_km: 5,
+    years_analyzed: years,
+    results,
+    trend,
+    methodology: 'Year-by-year Sentinel-2 analysis. Best available cloud-free image per year. NDVI and BSI calculated on land pixels (water masked).',
+  });
+});
+
+
 
 app.post('/satellite-check', async (req, res) => {
   const { region } = req.body;

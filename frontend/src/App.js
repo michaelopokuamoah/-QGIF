@@ -3,16 +3,23 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Tooltip, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 
-const BG="#050E1C",PANEL="#08162A",P2="#0B1E35";
-const CYAN="#00C8F0",GREEN="#00E87A",AMBER="#F07020",RED="#E83A3A",PURPLE="#8B5CF6";
-const TEXT="#D8E8FF",TEXT2="rgba(216,232,255,0.55)",MUTED="#4A6880";
-const BORDER="rgba(0,200,240,0.1)",BORDER2="rgba(0,200,240,0.05)";
-const FH="Georgia,'Times New Roman',serif";
-const FB="'Segoe UI',Arial,sans-serif";
-const FM="'Courier New',monospace";
-const SEV_C={CRITICAL:RED,HIGH:AMBER,MEDIUM:"#F5C842",LOW:GREEN};
-const SEV_BG={CRITICAL:"rgba(232,58,58,.12)",HIGH:"rgba(240,112,32,.12)",MEDIUM:"rgba(245,200,66,.1)",LOW:"rgba(0,232,122,.08)"};
-const IMP_C={TRANSFORMATIONAL:CYAN,CRITICAL:RED,"MAJOR IMPROVEMENT":GREEN,POSITIVE:PURPLE,HIGH:AMBER,MEDIUM:"#F5C842"};
+// ── DESIGN TOKENS ──────────────────────────────────────────
+// Palette: deep navy instrument panel — authoritative, scientific
+const BG="#040D1A",PANEL="#071526",P2="#0A1E33";
+const CYAN="#0EA5E9",GREEN="#10B981",AMBER="#F59E0B",RED="#EF4444",PURPLE="#8B5CF6";
+const TEXT="#E2EEF9",TEXT2="rgba(226,238,249,0.5)",MUTED="#3D5A73";
+const BORDER="rgba(14,165,233,0.12)",BORDER2="rgba(14,165,233,0.06)";
+
+// ── TYPOGRAPHY ─────────────────────────────────────────────
+// Inter: professional dashboard body — clear hierarchy, neutral authority
+// DM Mono: data labels and codes — precise without feeling retro
+const FH="Inter,'Segoe UI',system-ui,sans-serif";  // headings
+const FB="Inter,'Segoe UI',system-ui,sans-serif";  // body
+const FM="'DM Mono','Fira Mono','Courier New',monospace"; // data/labels
+
+const SEV_C={CRITICAL:RED,HIGH:AMBER,MEDIUM:"#EAB308",LOW:GREEN};
+const SEV_BG={CRITICAL:"rgba(239,68,68,.1)",HIGH:"rgba(245,158,11,.1)",MEDIUM:"rgba(234,179,8,.08)",LOW:"rgba(16,185,129,.08)"};
+const IMP_C={TRANSFORMATIONAL:CYAN,CRITICAL:RED,"MAJOR IMPROVEMENT":GREEN,POSITIVE:PURPLE,HIGH:AMBER,MEDIUM:"#EAB308"};
 
 const ROLES=[
   {key:"government",label:"Government Official",icon:"🏛",color:CYAN,desc:"Policy briefings, budget decisions",prompts:["Which regions face the highest risk?","What is the cost of illegal mining?","Which issues need emergency action?","What reporting obligations is Ghana failing?"]},
@@ -248,10 +255,9 @@ function FlyToHandler({center}){
 }
 
 function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSearchQuery,mapCenter,setMapCenter,showHotspots,setShowHotspots,showTowns,setShowTowns,clickedCoord,satLoading,satData}){
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 769;
-  const [hovered,setHovered]=useState(null);
+  const [hovered,setHovered]=useState(null); // eslint-disable-line
 
-  // SVG region paths for Ghana
+  // Desktop Leaflet map only
   const MAP_REGIONS=[
     {name:"Upper West Region",risk:"LOW",d:"M130,58 L285,58 L295,100 L275,162 L245,202 L205,222 L165,212 L135,192 L115,152 L115,100 Z"},
     {name:"Upper East Region",risk:"LOW",d:"M285,58 L445,58 L455,82 L465,132 L445,182 L405,202 L365,212 L325,202 L295,182 L275,162 L295,100 Z"},
@@ -271,79 +277,10 @@ function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSe
   const SS={CRITICAL:"rgba(232,58,58,0.5)",HIGH:"rgba(240,112,32,0.4)",MEDIUM:"rgba(245,200,66,0.3)",LOW:"rgba(0,232,122,0.25)"};
 
   // On mobile use SVG map, on desktop use Leaflet
-  if(isMobile){
-    return(
-      <div style={{position:"relative",width:"100%",height:"100%",background:"#030A14",overflow:"hidden"}}>
-        <div style={{position:"absolute",left:0,right:0,height:2,zIndex:15,pointerEvents:"none",background:"linear-gradient(90deg,transparent,rgba(0,200,240,.5),#00C8F0,rgba(0,200,240,.5),transparent)",animation:"scan 4s linear infinite"}}/>
-        <div style={{position:"absolute",top:0,left:0,right:0,zIndex:20,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",background:"rgba(3,10,20,.95)",borderBottom:"1px solid rgba(0,200,240,0.1)"}}>
-          <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:12,fontWeight:600,color:TEXT}}>{layer.label} — Tap any region</div>
-          <div style={{fontFamily:"'Courier New',monospace",fontSize:10,color:CYAN}}>{activeRegion||"No region selected"}</div>
-        </div>
-        <svg viewBox="0 0 700 820" style={{width:"100%",height:"calc(100% - 76px)",marginTop:40,cursor:"pointer"}} xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <radialGradient id="rg1" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="#E83A3A" stopOpacity=".25"/><stop offset="100%" stopColor="#E83A3A" stopOpacity="0"/></radialGradient>
-            <radialGradient id="rg2" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="#F07020" stopOpacity=".18"/><stop offset="100%" stopColor="#F07020" stopOpacity="0"/></radialGradient>
-            <filter id="blur"><feGaussianBlur stdDeviation="20"/></filter>
-          </defs>
-          {[100,200,300,400,500,600,700].map(y=><line key={y} x1="0" y1={y} x2="700" y2={y} stroke="rgba(0,200,240,.04)" strokeWidth=".5"/>)}
-          {[100,200,300,400,500,600].map(x=><line key={x} x1={x} y1="0" x2={x} y2="820" stroke="rgba(0,200,240,.04)" strokeWidth=".5"/>)}
-          <ellipse cx="230" cy="560" rx="110" ry="90" fill="url(#rg1)" filter="url(#blur)"/>
-          <ellipse cx="390" cy="440" rx="90" ry="75" fill="url(#rg2)" filter="url(#blur)"/>
-          {MAP_REGIONS.map(r=>(
-            <path key={r.name} d={r.d}
-              fill={activeRegion===r.name?"rgba(0,200,240,.22)":hovered===r.name?"rgba(0,200,240,.1)":SF[r.risk]}
-              stroke={activeRegion===r.name?CYAN:SS[r.risk]}
-              strokeWidth={activeRegion===r.name?1.6:.7}
-              style={{transition:"all .18s",cursor:"pointer"}}
-              onClick={()=>onRegionClick(r.name)}
-              onMouseEnter={()=>setHovered(r.name)}
-              onMouseLeave={()=>setHovered(null)}
-            />
-          ))}
-          {[[175,152,"UPPER WEST"],[365,148,"UPPER EAST"],[295,280,"NORTHERN"],[308,418,"BRONG-AHAFO"],[318,498,"ASHANTI"],[415,612,"EASTERN"],[215,576,"WESTERN"],[350,678,"CENTRAL"],[458,706,"GR. ACCRA"],[522,432,"VOLTA"],[405,420,"BONO EAST"]].map(([x,y,t])=>(
-            <text key={t} x={x} y={y} fill="rgba(0,200,240,.45)" fontSize="9" fontFamily="monospace" textAnchor="middle" pointerEvents="none">{t}</text>
-          ))}
-          {[[354,718,"Accra",5],[308,494,"Kumasi",4],[270,370,"Sunyani",3],[332,200,"Tamale",3]].map(([cx,cy,lbl,r])=>(
-            <g key={lbl}><circle cx={cx} cy={cy} r={r} fill={CYAN} opacity=".85"/><text x={cx+10} y={cy+4} fill={CYAN} fontSize={r*2.5} fontFamily="monospace" opacity=".75">{lbl}</text></g>
-          ))}
-          {[[202,562,RED,0],[424,522,AMBER,.5],[342,272,GREEN,.9]].map(([cx,cy,col,delay])=>(
-            <g key={`hs${cx}`}>
-              <circle r="5" cx={cx} cy={cy} fill="none" stroke={col} strokeWidth="2" style={{animation:`hspulse 2s ease-out infinite ${delay}s`}}/>
-              <circle r="4" cx={cx} cy={cy} fill={col} opacity=".9"/>
-            </g>
-          ))}
-        </svg>
-        {/* Live satellite status on mobile map */}
-        {(satLoading||satData)&&(
-          <div style={{position:"absolute",bottom:40,left:8,right:8,zIndex:20,background:"rgba(8,22,42,0.96)",border:"1px solid rgba(0,200,240,0.3)",borderRadius:8,padding:"8px 12px"}}>
-            {satLoading&&<div style={{fontFamily:"'Courier New',monospace",fontSize:10,color:AMBER,display:"flex",alignItems:"center",gap:6}}><span style={{width:5,height:5,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/>Querying satellite...</div>}
-            {!satLoading&&satData&&satData.earth_engine_status?.includes("CONNECTED")&&(
-              <div>
-                <div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:GREEN,marginBottom:6,display:"flex",alignItems:"center",gap:5}}><span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block"}}/>LIVE SENTINEL-2 · {satData.satellite_date}</div>
-                <div style={{display:"flex",gap:12}}>
-                  <div><div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED}}>NDVI</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:13,fontWeight:700,color:satData.ndvi_mean>0.5?GREEN:AMBER}}>{satData.ndvi_mean}</div></div>
-                  <div><div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED}}>DEGRADATION</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:13,fontWeight:700,color:satData.degradation_gap>0.25?RED:GREEN}}>{satData.degradation_gap}</div></div>
-                  <div><div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED}}>SIGNAL</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:11,fontWeight:700,color:satData.degradation_signal?.startsWith("YES")?RED:GREEN}}>{satData.degradation_signal?.startsWith("YES")?"ALERT":"CLEAR"}</div></div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-        <div style={{position:"absolute",bottom:0,left:0,right:0,height:36,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 12px",background:"rgba(3,10,20,.95)",borderTop:"1px solid rgba(0,200,240,0.1)",zIndex:20}}>
-          <div style={{display:"flex",gap:14}}>
-            {[["Satellite","Sentinel-2",CYAN],["Sensors","847 online",GREEN],["Quantum","Active",PURPLE]].map(([k,v,col])=>(
-              <div key={k} style={{fontFamily:"'Courier New',monospace",fontSize:9,color:MUTED}}>{k} <span style={{color:col}}>{v}</span></div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   // Desktop — full Leaflet satellite map
   const mapRef=useRef(null);
   return(
-    <div style={{position:"relative",width:"100%",height:"100%",background:"#030A14"}}>
+    <div style={{position:"relative",width:"100%",height:"100%",background:BG}}>
       <style>{`
         .qgif-tooltip{background:#08162A!important;border:1px solid rgba(0,200,240,0.4)!important;color:#D8E8FF!important;font-family:monospace!important;font-size:11px!important;padding:6px 10px!important;border-radius:6px!important;}
         .leaflet-container{background:#030A14!important;}
@@ -358,28 +295,28 @@ function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSe
           <input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}
             onKeyDown={e=>{if(e.key==="Enter"){const q=searchQuery.toLowerCase();const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));const reg=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));if(town){setMapCenter([town.lat,town.lng,13]);onCoordClick(town.lat,town.lng,town.name);}else if(reg){setMapCenter([reg[1].lat,reg[1].lng,9]);onRegionClick(reg[0]);}}}}
             placeholder="Search any town or region..."
-            style={{flex:1,background:P2,border:"1px solid rgba(0,200,240,0.2)",borderRight:"none",borderRadius:"6px 0 0 6px",padding:"6px 10px",color:TEXT,fontSize:12,outline:"none",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}/>
+            style={{flex:1,background:P2,border:"1px solid rgba(0,200,240,0.2)",borderRight:"none",borderRadius:"6px 0 0 6px",padding:"6px 10px",color:TEXT,fontSize:12,outline:"none",fontFamily:FB}}/>
           <button onClick={()=>{const q=searchQuery.toLowerCase();const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));const reg=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));if(town){setMapCenter([town.lat,town.lng,13]);onCoordClick(town.lat,town.lng,town.name);}else if(reg){setMapCenter([reg[1].lat,reg[1].lng,9]);onRegionClick(reg[0]);}}}
             style={{background:CYAN,border:"none",borderRadius:"0 6px 6px 0",padding:"6px 12px",color:BG,fontSize:12,fontWeight:700,cursor:"pointer"}}>Go</button>
         </div>
         <button onClick={()=>setShowHotspots(!showHotspots)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${showHotspots?RED:BORDER2}`,background:showHotspots?`${RED}15`:"transparent",color:showHotspots?RED:MUTED,fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}>Hotspots</button>
         <button onClick={()=>setShowTowns(!showTowns)} style={{padding:"5px 10px",borderRadius:5,border:`1px solid ${showTowns?PURPLE:BORDER2}`,background:showTowns?`${PURPLE}15`:"transparent",color:showTowns?PURPLE:MUTED,fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}>Towns</button>
-        <div style={{fontFamily:"'Courier New',monospace",fontSize:10,color:CYAN,whiteSpace:"nowrap"}}>{activeRegion||clickedCoord||"Click map"}</div>
+        <div style={{fontFamily:FM,fontSize:10,color:CYAN,whiteSpace:"nowrap"}}>{activeRegion||clickedCoord||"Click map"}</div>
       </div>
 
       {/* LIVE SATELLITE STATUS */}
       {(satLoading||satData)&&(
         <div style={{position:"absolute",top:48,left:12,zIndex:1000,background:"rgba(8,22,42,0.96)",border:`1px solid ${satData?.earth_engine_status?.includes("CONNECTED")?GREEN:BORDER}`,borderRadius:8,padding:"8px 12px",maxWidth:260}}>
-          {satLoading&&<div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:AMBER,display:"flex",alignItems:"center",gap:6}}><span style={{width:6,height:6,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/>Querying Earth Engine...</div>}
+          {satLoading&&<div style={{fontFamily:FM,fontSize:9,color:AMBER,display:"flex",alignItems:"center",gap:6}}><span style={{width:6,height:6,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/>Querying Earth Engine...</div>}
           {!satLoading&&satData&&satData.earth_engine_status?.includes("CONNECTED")&&(
             <div>
-              <div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:GREEN,marginBottom:5,display:"flex",alignItems:"center",gap:5}}><span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block"}}/>LIVE SENTINEL-2 · {satData.satellite_date}</div>
+              <div style={{fontFamily:FM,fontSize:9,color:GREEN,marginBottom:5,display:"flex",alignItems:"center",gap:5}}><span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block"}}/>LIVE SENTINEL-2 · {satData.satellite_date}</div>
               <div style={{display:"flex",gap:10}}>
-                <div><div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED}}>NDVI</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:12,fontWeight:700,color:satData.ndvi_mean>0.5?GREEN:AMBER}}>{satData.ndvi_mean}</div></div>
-                <div><div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED}}>DEGRADATION</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:12,fontWeight:700,color:satData.degradation_gap>0.25?RED:GREEN}}>{satData.degradation_gap}</div></div>
-                <div><div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED}}>WATER</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:12,fontWeight:700,color:CYAN}}>{satData.water_fraction_pct}%</div></div>
+                <div><div style={{fontFamily:FM,fontSize:8,color:MUTED}}>NDVI</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:12,fontWeight:700,color:satData.ndvi_mean>0.5?GREEN:AMBER}}>{satData.ndvi_mean}</div></div>
+                <div><div style={{fontFamily:FM,fontSize:8,color:MUTED}}>DEGRADATION</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:12,fontWeight:700,color:satData.degradation_gap>0.25?RED:GREEN}}>{satData.degradation_gap}</div></div>
+                <div><div style={{fontFamily:FM,fontSize:8,color:MUTED}}>WATER</div><div style={{fontFamily:"-apple-system,sans-serif",fontSize:12,fontWeight:700,color:CYAN}}>{satData.water_fraction_pct}%</div></div>
               </div>
-              {satData.degradation_signal?.startsWith("YES")&&<div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:RED,marginTop:4}}>LAND DEGRADATION DETECTED</div>}
+              {satData.degradation_signal?.startsWith("YES")&&<div style={{fontFamily:FM,fontSize:9,color:RED,marginTop:4}}>LAND DEGRADATION DETECTED</div>}
             </div>
           )}
         </div>
@@ -394,7 +331,7 @@ function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSe
           <FlyToHandler center={mapCenter}/>
           {Object.entries(REGION_COORDS).map(([name,data])=>(
             <Marker key={name} position={[data.lat,data.lng]} icon={makeRegionIcon(data.risk,data.sites,activeRegion===name)} eventHandlers={{click:()=>onRegionClick(name)}}>
-              <Tooltip direction="top" className="qgif-tooltip"><b style={{color:getRiskColor(data.risk)}}>{name}</b><br/>Risk: <b>{data.risk}</b> · Sites: <b>{data.sites}</b><br/>Mercury: <b>{data.mercury} mg/L</b><br/><span style={{color:"#00C8F0",fontSize:10}}>Click for full intelligence</span></Tooltip>
+              <Tooltip direction="top" className="qgif-tooltip"><b style={{color:getRiskColor(data.risk)}}>{name}</b><br/>Risk: <b>{data.risk}</b> · Sites: <b>{data.sites}</b><br/>Mercury: <b>{data.mercury} mg/L</b><br/><span style={{color:CYAN,fontSize:10}}>Click for full intelligence</span></Tooltip>
             </Marker>
           ))}
           {showTowns&&GHANA_TOWNS.map(t=>(<Marker key={t.name} position={[t.lat,t.lng]} icon={makeTownIcon(t.type,t.name)} eventHandlers={{click:()=>onCoordClick(t.lat,t.lng,t.name)}}><Tooltip direction="top" className="qgif-tooltip"><b>{t.name}</b><br/>Pop: {t.pop.toLocaleString()}<br/>{t.region}</Tooltip></Marker>))}
@@ -404,23 +341,23 @@ function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSe
 
       {/* LEGEND */}
       <div style={{position:"absolute",bottom:42,right:12,zIndex:1000,background:"rgba(8,22,42,.96)",border:"1px solid rgba(0,200,240,0.1)",borderRadius:8,padding:"10px 14px"}}>
-        <div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED,marginBottom:8,letterSpacing:".08em"}}>RISK INDEX</div>
+        <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:8,letterSpacing:".08em"}}>RISK INDEX</div>
         {[[RED,"Critical"],[AMBER,"High"],["#F5C842","Medium"],[GREEN,"Low"]].map(([col,l])=>(
           <div key={l} style={{display:"flex",alignItems:"center",gap:7,fontSize:10,fontFamily:"-apple-system,sans-serif",color:TEXT2,marginBottom:5}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:col,boxShadow:`0 0 5px ${col}`}}/>{l}
           </div>
         ))}
-        <div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED,marginTop:7}}>Numbers = illegal sites</div>
+        <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginTop:7}}>Numbers = illegal sites</div>
       </div>
 
       {/* STATUS BAR */}
       <div style={{position:"absolute",bottom:0,left:0,right:0,height:36,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 16px",background:"rgba(3,10,20,.95)",borderTop:"1px solid rgba(0,200,240,0.1)",zIndex:1000}}>
         <div style={{display:"flex",gap:16}}>
           {[["Satellite","Sentinel-2",CYAN],["Towns",`${GHANA_TOWNS.length} mapped`,PURPLE],["Hotspots",`${MINING_HOTSPOTS.length} active`,RED]].map(([k,v,col])=>(
-            <div key={k} style={{fontFamily:"'Courier New',monospace",fontSize:9,color:MUTED}}>{k} <span style={{color:col}}>{v}</span></div>
+            <div key={k} style={{fontFamily:FM,fontSize:9,color:MUTED}}>{k} <span style={{color:col}}>{v}</span></div>
           ))}
         </div>
-        <div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:MUTED}}>Click anywhere for live satellite analysis</div>
+        <div style={{fontFamily:FM,fontSize:9,color:MUTED}}>Click anywhere for live satellite analysis</div>
       </div>
     </div>
   );
@@ -428,7 +365,7 @@ function MapTab({layer,activeRegion,onRegionClick,onCoordClick,searchQuery,setSe
 
 function QuantumTab({activeRegion,setActiveRegion,qData,qLoading,qType,setQType,runQuantum}){
   return(
-    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
       <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Quantum Optimizer Engine</div>
       <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
         {[{key:"land",label:"QAOA Land Use"},{key:"route",label:"Quantum Walk Route"}].map(q=>(
@@ -497,7 +434,7 @@ function QuantumTab({activeRegion,setActiveRegion,qData,qLoading,qType,setQType,
 
 function ScenarioTab({scRegion,setScRegion,scScenario,setScScenario,scIntensity,setScIntensity,scData,scLoading,runScenario}){
   return(
-    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
       <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Scenario Simulator</div>
       <Card>
         <Label text="SELECT REGION"/>
@@ -558,7 +495,7 @@ function ScenarioTab({scRegion,setScRegion,scScenario,setScScenario,scIntensity,
 
 function RiskTab({activeRegion,setActiveRegion,riskData,riskLoading,runRisk}){
   return(
-    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
       <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Quantum Risk Matrix</div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
         {REGIONS.map(r=>(<button key={r.name} onClick={()=>{setActiveRegion(r.name);runRisk(r.name);}} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}10`:"transparent",color:activeRegion===r.name?CYAN:MUTED,cursor:"pointer",fontSize:12,fontFamily:FB}}>{r.name}</button>))}
@@ -606,7 +543,7 @@ function RiskTab({activeRegion,setActiveRegion,riskData,riskLoading,runRisk}){
 
 function DiseaseTab({activeRegion,setActiveRegion,diseaseData,diseaseLoading,runDisease}){
   return(
-    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
       <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Disease Intelligence Engine</div>
       <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Six real mathematical models running simultaneously. Every number calculated from environmental measurements.</p>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
@@ -674,7 +611,7 @@ function LawyerTab({lawyerData,lawyerLoading,runLawyer}){
   const [form,setForm]=useState({region:"Western Region",communityName:"",reporterName:"",incidentType:"water_contamination",incidentDescription:""});
   const update=(k,v)=>setForm(f=>({...f,[k]:v}));
   return(
-    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
       <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Digital Lawyer — Community Evidence Generator</div>
       <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Affected communities get automatic court-ready evidence packages from satellite data. Free. Instant. No lawyer needed.</p>
       <Card>
@@ -779,7 +716,7 @@ function DamTab({damData,damLoading,runDam}){
   const [form,setForm]=useState({region:"Western Region",damName:"",damAge:15,heightMeters:45,tailingsVolumeMCubic:12,lastInspectionDays:180,rainfallLast30Days:150});
   const update=(k,v)=>setForm(f=>({...f,[k]:v}));
   return(
-    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
       <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Dam Collapse Risk Predictor</div>
       <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>ICOLD statistical failure model. Predicts collapse 90 days before failure.</p>
       <Card>
@@ -875,7 +812,7 @@ function InsuranceTab({insuranceData,insuranceLoading,runInsurance}){
   const [form,setForm]=useState({region:"Western Region",cropType:"cocoa",farmSizeHectares:2});
   const update=(k,v)=>setForm(f=>({...f,[k]:v}));
   return(
-    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
       <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Parametric Crop Insurance Engine</div>
       <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Satellite-triggered insurance for Ghanaian farmers. No paperwork. Payout via mobile money within 48 hours.</p>
       <Card>
@@ -946,7 +883,7 @@ function AirTab({airData,airLoading,runAir}){
   const [region,setRegion]=useState("Western Region");
   const aqiColor=aqi=>aqi>150?RED:aqi>100?AMBER:aqi>50?"#F5C842":GREEN;
   return(
-    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
       <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Real-Time Air Quality Alert System</div>
       <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Mercury vapour, PM2.5, SO2 calculated from environmental data. SMS alerts in English and Twi.</p>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
@@ -1012,7 +949,7 @@ function AirTab({airData,airLoading,runAir}){
 function CriminalTab({criminalData,criminalLoading,runCriminal}){
   const [region,setRegion]=useState("Western Region");
   return(
-    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:"#030A14"}}>
+    <div style={{width:"100%",height:"100%",overflowY:"scroll",padding:20,background:BG}}>
       <div style={{fontFamily:FH,fontSize:20,marginBottom:6,color:TEXT,fontWeight:"normal"}}>Criminal Network Intelligence</div>
       <p style={{fontFamily:FB,fontSize:13,color:MUTED,lineHeight:1.7,marginBottom:16}}>Quantum graph analysis maps illegal mining criminal networks. From site operators to financiers to international gold traders.</p>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
@@ -1079,7 +1016,164 @@ function CriminalTab({criminalData,criminalLoading,runCriminal}){
   );
 }
 
-// ── MONITORING TAB ──
+// ── TIMELINE TAB ──
+function TimelineTab({timelineData,timelineLoading,runTimeline,activeRegion}){
+  const API="https://qgif-backend.onrender.com";
+  const [selectedRegion,setSelectedRegion]=useState(activeRegion||"Western Region");
+  const ss={fontFamily:"Inter,'Segoe UI',system-ui,sans-serif"};
+  const sm={fontFamily:"'DM Mono','Fira Mono',monospace"};
+
+  const handleRun=()=>{
+    const rd=REGION_COORDS[selectedRegion];
+    if(rd) runTimeline(rd.lat,rd.lng,selectedRegion);
+  };
+
+  const maxMining=timelineData?.results?.filter(r=>r.status==="OK").reduce((m,r)=>Math.max(m,r.mining_score),1)||100;
+  const maxGap=timelineData?.results?.filter(r=>r.status==="OK").reduce((m,r)=>Math.max(m,r.degradation_gap),.1)||1;
+
+  return(
+    <div className="tab-content" style={{background:BG}}>
+      <div className="tab-inner" style={{margin:"0 auto"}}>
+
+        <div style={{marginBottom:20}}>
+          <div style={{...ss,fontSize:18,fontWeight:600,color:TEXT,marginBottom:4,letterSpacing:"-.02em"}}>Historical Satellite Timeline</div>
+          <div style={{...sm,fontSize:9,color:MUTED,letterSpacing:".1em",textTransform:"uppercase"}}>Year-by-year environmental change · 2020 to present · Sentinel-2</div>
+        </div>
+
+        {/* Controls */}
+        <div className="card" style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:20}}>
+          <select value={selectedRegion} onChange={e=>setSelectedRegion(e.target.value)} className="select" style={{flex:1,minWidth:180}}>
+            {Object.keys(REGION_COORDS).map(r=><option key={r} value={r}>{r}</option>)}
+          </select>
+          <button className="btn-primary btn" onClick={handleRun} disabled={timelineLoading} style={{flexShrink:0}}>
+            {timelineLoading?"Analysing years...":"Run Historical Analysis"}
+          </button>
+          {timelineData&&<div style={{...sm,fontSize:10,color:MUTED,flexShrink:0}}>Last: {timelineData.location}</div>}
+        </div>
+
+        {timelineLoading&&(
+          <div style={{textAlign:"center",padding:"60px 20px"}}>
+            <Spinner label="Querying satellite archive for 6 years of data — this takes 2-3 minutes"/>
+          </div>
+        )}
+
+        {!timelineLoading&&timelineData&&!timelineData._error&&(
+          <div style={{animation:"fadein .3s ease"}}>
+
+            {/* Trend summary */}
+            {timelineData.trend&&(
+              <div className={"card "+(timelineData.trend.direction==="DEGRADING"?"card-critical":"card-low")} style={{marginBottom:20}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10,marginBottom:12}}>
+                  <div>
+                    <div style={{...sm,fontSize:9,color:MUTED,marginBottom:4}}>TREND SUMMARY · {timelineData.trend.years_covered}</div>
+                    <div style={{...ss,fontSize:16,fontWeight:600,color:timelineData.trend.direction==="DEGRADING"?RED:GREEN}}>
+                      {timelineData.trend.direction}
+                    </div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,auto)",gap:"8px 20px",textAlign:"center"}}>
+                    {[
+                      ["NDVI Change",timelineData.trend.ndvi_change,timelineData.trend.ndvi_change<0?RED:GREEN],
+                      ["Forest Change",`${timelineData.trend.forest_cover_change}%`,timelineData.trend.forest_cover_change<0?RED:GREEN],
+                      ["Mining Shift",`+${timelineData.trend.mining_score_change}`,timelineData.trend.mining_score_change>10?RED:GREEN],
+                      ["Degradation",`+${timelineData.trend.degradation_change}`,timelineData.trend.degradation_change>0.1?RED:GREEN],
+                    ].map(([l,v,c])=>(
+                      <div key={l}>
+                        <div style={{...sm,fontSize:8,color:MUTED}}>{l}</div>
+                        <div style={{...sm,fontSize:14,fontWeight:500,color:c}}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{...ss,fontSize:13,color:TEXT2,lineHeight:1.6}}>{timelineData.trend.assessment}</div>
+              </div>
+            )}
+
+            {/* Year-by-year chart */}
+            <div className="card" style={{marginBottom:16}}>
+              <div className="section-label">Mining Activity Score by Year</div>
+              <div style={{display:"flex",alignItems:"flex-end",gap:8,height:120,padding:"8px 0"}}>
+                {timelineData.results.map(r=>{
+                  const h=r.status==="OK"?Math.max(4,Math.round((r.mining_score/maxMining)*100)):4;
+                  const col=r.mining_score>70?RED:r.mining_score>40?AMBER:GREEN;
+                  return(
+                    <div key={r.year} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                      <div style={{...sm,fontSize:9,color:col}}>{r.status==="OK"?r.mining_score:"—"}</div>
+                      <div style={{width:"100%",height:`${h}px`,background:r.status==="OK"?col:"rgba(255,255,255,.05)",borderRadius:"3px 3px 0 0",minHeight:4,transition:"height .5s ease"}}/>
+                      <div style={{...sm,fontSize:9,color:MUTED}}>{r.year}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* NDVI chart */}
+            <div className="card" style={{marginBottom:16}}>
+              <div className="section-label">Vegetation Health (NDVI) by Year</div>
+              <div style={{display:"flex",alignItems:"flex-end",gap:8,height:100,padding:"8px 0"}}>
+                {timelineData.results.map(r=>{
+                  const h=r.status==="OK"?Math.max(4,Math.round((r.ndvi_mean/0.8)*100)):4;
+                  const col=r.ndvi_mean>0.5?GREEN:r.ndvi_mean>0.3?AMBER:RED;
+                  return(
+                    <div key={r.year} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                      <div style={{...sm,fontSize:9,color:col}}>{r.status==="OK"?r.ndvi_mean:"—"}</div>
+                      <div style={{width:"100%",height:`${h}px`,background:r.status==="OK"?col:"rgba(255,255,255,.05)",borderRadius:"3px 3px 0 0",minHeight:4}}/>
+                      <div style={{...sm,fontSize:9,color:MUTED}}>{r.year}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Detail table */}
+            <div className="card">
+              <div className="section-label">Year-by-Year Data</div>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead>
+                  <tr style={{borderBottom:`1px solid ${BORDER}`}}>
+                    {["Year","Sat. Date","NDVI","Degradation Gap","Forest Cover","Mining Score","Signal"].map(h=>(
+                      <th key={h} style={{...sm,fontSize:9,color:MUTED,padding:"6px 8px",textAlign:"left",letterSpacing:".06em",textTransform:"uppercase"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {timelineData.results.map(r=>(
+                    <tr key={r.year} style={{borderBottom:`1px solid ${BORDER2}`}}>
+                      <td style={{...sm,fontSize:12,color:TEXT,padding:"8px",fontWeight:500}}>{r.year}</td>
+                      <td style={{...sm,fontSize:11,color:MUTED,padding:"8px"}}>{r.satellite_date||"—"}</td>
+                      <td style={{...sm,fontSize:12,color:r.status==="OK"?(r.ndvi_mean>0.5?GREEN:r.ndvi_mean>0.3?AMBER:RED):MUTED,padding:"8px"}}>{r.status==="OK"?r.ndvi_mean:"N/A"}</td>
+                      <td style={{...sm,fontSize:12,color:r.status==="OK"?(r.degradation_gap>0.3?RED:r.degradation_gap>0.15?AMBER:GREEN):MUTED,padding:"8px"}}>{r.status==="OK"?r.degradation_gap:"N/A"}</td>
+                      <td style={{...ss,fontSize:12,color:TEXT2,padding:"8px"}}>{r.status==="OK"?`${r.forest_cover_pct}%`:"N/A"}</td>
+                      <td style={{...sm,fontSize:12,color:r.status==="OK"?(r.mining_score>70?RED:r.mining_score>40?AMBER:GREEN):MUTED,padding:"8px",fontWeight:500}}>{r.status==="OK"?`${r.mining_score}/100`:"N/A"}</td>
+                      <td style={{padding:"8px"}}>{r.status==="OK"?<Tag label={r.degradation_gap>0.25?"ALERT":"CLEAR"} color={r.degradation_gap>0.25?RED:GREEN}/>:<span style={{...sm,fontSize:9,color:MUTED}}>NO DATA</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{...sm,fontSize:9,color:MUTED,marginTop:12,lineHeight:1.7,paddingTop:10,borderTop:`1px solid ${BORDER}`}}>
+                Data source: ESA Sentinel-2 MSI (Surface Reflectance) via Google Earth Engine · 5km radius · Water bodies excluded · Best cloud-free image per year
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {!timelineLoading&&!timelineData&&(
+          <div style={{textAlign:"center",padding:"80px 20px"}}>
+            <div style={{width:48,height:48,borderRadius:8,background:`${CYAN}12`,border:`1px solid ${CYAN}22`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontSize:20}}>📅</div>
+            <div style={{...ss,fontSize:15,fontWeight:600,color:TEXT,marginBottom:6}}>Historical Analysis</div>
+            <div style={{...ss,fontSize:13,color:MUTED,lineHeight:1.6,maxWidth:400,margin:"0 auto"}}>
+              Select a region and run the analysis to see how vegetation, forest cover, and mining activity have changed year by year from 2020 to present.
+            </div>
+          </div>
+        )}
+
+        <div style={{height:40}}/>
+      </div>
+    </div>
+  );
+}
+
+
 function MonitoringTab({monitorData,monitorLoading,runMonitor,dashData,dashLoading,loadDash}){
   const [email,setEmail]=useState("");
   const [orgName,setOrgName]=useState("");
@@ -1105,8 +1199,8 @@ function MonitoringTab({monitorData,monitorLoading,runMonitor,dashData,dashLoadi
   };
   const SEV_COL={CRITICAL:RED,WARNING:AMBER,WATCH:"#F5C842",IMPROVEMENT:GREEN,INFO:CYAN};
   const SC={CRITICAL:"alert-critical",WARNING:"alert-warning",WATCH:"alert-watch",IMPROVEMENT:"alert-improvement"};
-  const ss={fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"};
-  const sm={fontFamily:"'Courier New',monospace"};
+  const ss={fontFamily:FB};
+  const sm={fontFamily:FM};
 
   return(
     <div className="tab-content" style={{background:BG}}>
@@ -1228,6 +1322,125 @@ function MonitoringTab({monitorData,monitorLoading,runMonitor,dashData,dashLoadi
   );
 }
 
+// ── INTELLIGENCE HUB TAB ──
+// Combines: Disease Intelligence, Risk Matrix, Scenario Simulator, Air Quality, Crop Insurance, Dam Risk
+function IntelligenceTab({
+  activeRegion,setActiveRegion,
+  diseaseData,diseaseLoading,runDisease,
+  riskData,riskLoading,runRisk,
+  scData,scLoading,scScenario,setScScenario,scIntensity,setScIntensity,scRegion,setScRegion,runScenario,
+  airData,airLoading,runAir,
+  insuranceData,insuranceLoading,runInsurance,
+  damData,damLoading,runDam,
+}){
+  const [activeSection,setActiveSection]=useState("disease");
+  const ss={fontFamily:"Inter,'Segoe UI',system-ui,sans-serif"};
+  const sm={fontFamily:"'DM Mono','Fira Mono',monospace"};
+
+  const SECTIONS=[
+    {key:"disease",label:"Disease Intelligence",desc:"6 predictive health models"},
+    {key:"risk",label:"Risk Matrix",desc:"Quantum kernel risk scoring"},
+    {key:"scenario",label:"Scenario Simulator",desc:"What-if policy analysis"},
+    {key:"air",label:"Air Quality",desc:"Mercury vapour & PM2.5"},
+    {key:"crop",label:"Crop Insurance",desc:"Parametric satellite insurance"},
+    {key:"dam",label:"Dam Risk",desc:"Tailings dam collapse predictor"},
+  ];
+
+  return(
+    <div className="tab-content" style={{background:BG}}>
+      <div style={{padding:"16px 20px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{...ss,fontSize:16,fontWeight:600,color:TEXT,marginRight:8}}>Intelligence Hub</div>
+        {SECTIONS.map(s=>(
+          <button key={s.key} onClick={()=>setActiveSection(s.key)}
+            style={{padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:activeSection===s.key?600:400,border:`1px solid ${activeSection===s.key?CYAN:BORDER2}`,background:activeSection===s.key?`${CYAN}14`:"transparent",color:activeSection===s.key?CYAN:MUTED,cursor:"pointer",whiteSpace:"nowrap"}}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Region selector */}
+      <div style={{padding:"10px 20px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+        <span style={{...sm,fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginRight:4}}>Region</span>
+        {REGIONS.map(r=>(
+          <button key={r.name} onClick={()=>{setActiveRegion(r.name);setScRegion&&setScRegion(r.name);}}
+            style={{padding:"4px 9px",borderRadius:5,fontSize:11,fontWeight:activeRegion===r.name?600:400,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}10`:"transparent",color:activeRegion===r.name?CYAN:MUTED,cursor:"pointer"}}>
+            {r.name.replace(" Region","")}
+          </button>
+        ))}
+        {activeRegion&&(
+          <button onClick={()=>{
+            if(activeSection==="disease") runDisease(activeRegion);
+            else if(activeSection==="risk") runRisk(activeRegion);
+            else if(activeSection==="air") runAir(activeRegion);
+            else if(activeSection==="crop") runInsurance(activeRegion);
+            else if(activeSection==="dam") runDam(activeRegion);
+            else if(activeSection==="scenario") runScenario(scRegion||activeRegion,scScenario,scIntensity);
+          }} className="btn-primary btn" style={{marginLeft:8}}>
+            Run {SECTIONS.find(s=>s.key===activeSection)?.label}
+          </button>
+        )}
+      </div>
+
+      {/* Content */}
+      <div style={{flex:1,overflowY:"auto",padding:20}}>
+        {activeSection==="disease"&&<DiseaseTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} diseaseData={diseaseData} diseaseLoading={diseaseLoading} runDisease={runDisease} embedded={true}/>}
+        {activeSection==="risk"&&<RiskTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} riskData={riskData} riskLoading={riskLoading} runRisk={runRisk} embedded={true}/>}
+        {activeSection==="scenario"&&<ScenarioTab scRegion={scRegion} setScRegion={setScRegion} scScenario={scScenario} setScScenario={setScScenario} scIntensity={scIntensity} setScIntensity={setScIntensity} scData={scData} scLoading={scLoading} runScenario={runScenario} embedded={true}/>}
+        {activeSection==="air"&&<AirTab airData={airData} airLoading={airLoading} runAir={runAir} embedded={true}/>}
+        {activeSection==="crop"&&<InsuranceTab insuranceData={insuranceData} insuranceLoading={insuranceLoading} runInsurance={runInsurance} embedded={true}/>}
+        {activeSection==="dam"&&<DamTab damData={damData} damLoading={damLoading} runDam={runDam} embedded={true}/>}
+      </div>
+    </div>
+  );
+}
+
+// ── QUANTUM HUB TAB ──
+// Combines: Quantum Optimizer + Criminal Network
+function QuantumHubTab({
+  activeRegion,setActiveRegion,
+  qData,qLoading,qType,setQType,runQuantum,
+  criminalData,criminalLoading,runCriminal,
+}){
+  const [activeSection,setActiveSection]=useState("optimizer");
+  const ss={fontFamily:"Inter,'Segoe UI',system-ui,sans-serif"};
+  const sm={fontFamily:"'DM Mono','Fira Mono',monospace"};
+
+  const SECTIONS=[
+    {key:"optimizer",label:"Quantum Optimizer",desc:"QAOA land use + route planning"},
+    {key:"criminal",label:"Criminal Network",desc:"Supply chain and network analysis"},
+  ];
+
+  return(
+    <div className="tab-content" style={{background:BG}}>
+      <div style={{padding:"16px 20px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{...ss,fontSize:16,fontWeight:600,color:TEXT,marginRight:8}}>Quantum Analysis</div>
+        {SECTIONS.map(s=>(
+          <button key={s.key} onClick={()=>setActiveSection(s.key)}
+            style={{padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:activeSection===s.key?600:400,border:`1px solid ${activeSection===s.key?PURPLE:BORDER2}`,background:activeSection===s.key?`${PURPLE}14`:"transparent",color:activeSection===s.key?PURPLE:MUTED,cursor:"pointer"}}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Region selector */}
+      <div style={{padding:"10px 20px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+        <span style={{...sm,fontSize:9,color:MUTED,letterSpacing:".08em",textTransform:"uppercase",marginRight:4}}>Region</span>
+        {REGIONS.map(r=>(
+          <button key={r.name} onClick={()=>{setActiveRegion(r.name);if(activeSection==="optimizer") runQuantum(r.name,qType); else runCriminal(r.name);}}
+            style={{padding:"4px 9px",borderRadius:5,fontSize:11,fontWeight:activeRegion===r.name?600:400,border:`1px solid ${activeRegion===r.name?PURPLE:BORDER2}`,background:activeRegion===r.name?`${PURPLE}10`:"transparent",color:activeRegion===r.name?PURPLE:MUTED,cursor:"pointer"}}>
+            {r.name.replace(" Region","")}
+          </button>
+        ))}
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:20}}>
+        {activeSection==="optimizer"&&<QuantumTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} qData={qData} qLoading={qLoading} qType={qType} setQType={setQType} runQuantum={runQuantum} embedded={true}/>}
+        {activeSection==="criminal"&&<CriminalTab criminalData={criminalData} criminalLoading={criminalLoading} runCriminal={runCriminal} embedded={true}/>}
+      </div>
+    </div>
+  );
+}
+
 export default function App(){
   const [role,setRole]=useState(ROLES[0]);
   const [layer,setLayer]=useState(LAYERS[0]);
@@ -1272,12 +1485,14 @@ export default function App(){
   const [monitorLoading,setMonitorLoading]=useState(false);
   const [dashData,setDashData]=useState(null);
   const [dashLoading,setDashLoading]=useState(false);
+  const [timelineData,setTimelineData]=useState(null);
+  const [timelineLoading,setTimelineLoading]=useState(false);
   const [satData,setSatData]=useState(null);
   const [satLoading,setSatLoading]=useState(false);
   const [liveDetect,setLiveDetect]=useState(null);
   const [liveDetectLoading,setLiveDetectLoading]=useState(false);
 
-  const TABS=["Map","Quantum Optimizer","Scenario Simulator","Risk Matrix","Disease Intelligence","Digital Lawyer","Dam Risk","Crop Insurance","Air Quality","Criminal Network","Monitoring"];
+  const TABS=["Map","Intelligence","Quantum","Legal & Evidence","Monitoring","Timeline"];
 
   useEffect(()=>{const t=setInterval(()=>setTime(new Date().toLocaleTimeString("en-GB")+" GMT"),1000);return()=>clearInterval(t);},[]);
 
@@ -1305,6 +1520,7 @@ export default function App(){
   const runSatelliteCheck=useCallback(async(reg)=>{setSatLoading(true);setSatData(null);try{const d=await post("/satellite-check",{region:reg});setSatData(d);}catch(e){setSatData({_error:e.message});}finally{setSatLoading(false);}},[post]);
   const runMonitor=useCallback(async()=>{setMonitorLoading(true);setMonitorData(null);try{const r=await fetch("https://qgif-backend.onrender.com/monitoring/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({secret:"qgif-monitor-2026"})});const d=await r.json();setMonitorData(d);}catch(e){setMonitorData({_error:e.message});}finally{setMonitorLoading(false);}},[]);
   const loadDash=useCallback(async()=>{setDashLoading(true);try{const r=await fetch("https://qgif-backend.onrender.com/monitoring/dashboard");const d=await r.json();setDashData(d);}catch(e){setDashData({_error:e.message});}finally{setDashLoading(false);}},[]);
+  const runTimeline=useCallback(async(lat,lng,name)=>{setTimelineLoading(true);setTimelineData(null);try{const r=await fetch("https://qgif-backend.onrender.com/historical-timeline",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lat,lng,name})});const d=await r.json();setTimelineData(d);}catch(e){setTimelineData({_error:e.message});}finally{setTimelineLoading(false);}},[]);
 
   const handleRegionClick=useCallback((name)=>{setRegion(name);setActiveRegion(name);setClickedCoord(null);runPrediction(name,layer,role);runSatelliteCheck(name);},[layer,role,runPrediction,runSatelliteCheck]);
   const handleCoordClick=useCallback(async(lat,lng,name)=>{
@@ -1336,117 +1552,120 @@ export default function App(){
   return(
     <div style={{display:"grid",gridTemplateRows:"52px 1fr",height:"100vh",background:BG,color:TEXT,fontFamily:FB,fontSize:13,overflow:"hidden"}}>
       <style>{`
-        @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Mono:ital,wght@0,400;0,500&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        body,html{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:#040D1A;color:#E2EEF9;}
+        button{font-family:'Inter','Segoe UI',system-ui,sans-serif;transition:all .15s;cursor:pointer;}
+        input,select,textarea{font-family:'Inter','Segoe UI',system-ui,sans-serif;}
+        ::-webkit-scrollbar{width:3px;} ::-webkit-scrollbar-track{background:#040D1A;} ::-webkit-scrollbar-thumb{background:rgba(14,165,233,.2);border-radius:2px;}
+        input:focus,select:focus,textarea:focus{outline:none;border-color:#0EA5E9!important;}
+
+        @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
         @keyframes scan{0%{top:0;opacity:0}5%{opacity:1}95%{opacity:1}100%{top:100%;opacity:0}}
         @keyframes qspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
         @keyframes hspulse{0%{r:5;opacity:.9}100%{r:22;opacity:0}}
-        @keyframes pulse{0%,100%{transform:scale(1);opacity:0.8}50%{transform:scale(1.4);opacity:0.4}}
-        *{box-sizing:border-box} 
-        button{transition:background .15s,border-color .15s,color .15s;font-family:inherit;}
-        input,select,textarea{font-family:inherit;}
-        ::-webkit-scrollbar{width:4px} 
-        ::-webkit-scrollbar-track{background:#050E1C} 
-        ::-webkit-scrollbar-thumb{background:rgba(0,200,240,.2);border-radius:2px}
-        select:focus,input:focus,textarea:focus{outline:none;border-color:#00C8F0!important;}
+        @keyframes pulse{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(1.4);opacity:.3}}
+        @keyframes fadein{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
 
-        /* ── TYPOGRAPHY ── */
-        .qgif-heading{font-family:Georgia,'Times New Roman',serif;font-weight:normal;letter-spacing:-.01em;}
-        .qgif-label{font-family:'Courier New',Courier,monospace;letter-spacing:.08em;text-transform:uppercase;}
-        .qgif-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.6;}
+        /* typography */
+        .t-display{font-size:18px;font-weight:600;letter-spacing:-.02em;line-height:1.3;}
+        .t-title{font-size:14px;font-weight:600;letter-spacing:-.01em;}
+        .t-body{font-size:13px;line-height:1.65;}
+        .t-label{font-family:'DM Mono','Fira Mono',monospace;font-size:9px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#3D5A73;}
+        .t-data{font-family:'DM Mono','Fira Mono',monospace;font-size:13px;}
+        .t-data-lg{font-family:'DM Mono','Fira Mono',monospace;font-size:20px;font-weight:500;}
 
-        /* ── TAB CONTENT — all tabs scroll properly on mobile ── */
+        /* cards */
+        .card{background:#071526;border:1px solid rgba(14,165,233,.1);border-radius:8px;padding:14px 16px;margin-bottom:10px;}
+        .card-hi{background:#071526;border:1px solid rgba(14,165,233,.22);border-radius:8px;padding:14px 16px;margin-bottom:10px;}
+        .card-critical{border-left:3px solid #EF4444!important;}
+        .card-high{border-left:3px solid #F59E0B!important;}
+        .card-medium{border-left:3px solid #EAB308!important;}
+        .card-low{border-left:3px solid #10B981!important;}
+
+        /* legacy card class names — map to new */
+        .qgif-card{background:#071526;border:1px solid rgba(14,165,233,.1);border-radius:8px;padding:14px 16px;margin-bottom:10px;}
+        .qgif-card-highlight{background:#071526;border:1px solid rgba(14,165,233,.22);border-radius:8px;padding:14px 16px;margin-bottom:10px;}
+
+        /* buttons */
+        .btn,.qgif-btn-primary,.qgif-btn-secondary{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;}
+        .btn-primary,.qgif-btn-primary{background:#0EA5E9;color:#040D1A;font-weight:600;border:none;}
+        .btn-primary:hover,.qgif-btn-primary:hover{background:#38BDF8;}
+        .btn-primary:disabled,.qgif-btn-primary:disabled{background:#3D5A73;cursor:not-allowed;}
+        .btn-outline,.qgif-btn-secondary{background:transparent;color:#0EA5E9;border:1px solid rgba(14,165,233,.3);}
+        .btn-outline:hover,.qgif-btn-secondary:hover{background:rgba(14,165,233,.08);}
+
+        /* inputs */
+        .input,.qgif-input{background:#071526;border:1px solid rgba(14,165,233,.15);border-radius:6px;padding:8px 12px;color:#E2EEF9;font-size:13px;width:100%;}
+        .input:focus,.qgif-input:focus{border-color:#0EA5E9;}
+        .select,.qgif-select{background:#071526;border:1px solid rgba(14,165,233,.15);border-radius:6px;padding:8px 12px;color:#E2EEF9;font-size:13px;width:100%;}
+
+        /* stats */
+        .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin-bottom:14px;}
+        .stat-box{background:#071526;border:1px solid rgba(14,165,233,.08);border-radius:6px;padding:10px 12px;text-align:center;}
+        .stat-label{font-family:'DM Mono','Fira Mono',monospace;font-size:9px;color:#3D5A73;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px;}
+        .stat-value{font-size:18px;font-weight:600;}
+
+        /* section label */
+        .section-label{font-family:'DM Mono','Fira Mono',monospace;font-size:9px;color:#3D5A73;letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(14,165,233,.07);}
+
+        /* alert colours */
+        .alert-critical{border-left:3px solid #EF4444;background:rgba(239,68,68,.05);}
+        .alert-warning{border-left:3px solid #F59E0B;background:rgba(245,158,11,.05);}
+        .alert-watch{border-left:3px solid #EAB308;background:rgba(234,179,8,.05);}
+        .alert-improvement{border-left:3px solid #10B981;background:rgba(16,185,129,.05);}
+
+        /* tab content */
         .tab-content{width:100%;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;}
-        .tab-inner{padding:16px;max-width:860px;}
-
-        /* ── CARDS ── */
-        .qgif-card{background:#0B1E35;border:1px solid rgba(0,200,240,0.1);border-radius:10px;padding:14px 16px;margin-bottom:12px;}
-        .qgif-card-highlight{background:#0B1E35;border:1px solid rgba(0,200,240,0.3);border-radius:10px;padding:14px 16px;margin-bottom:12px;}
-
-        /* ── BUTTONS ── */
-        .qgif-btn-primary{background:linear-gradient(135deg,#1A3A6B,#0099BB);color:white;border:none;border-radius:7px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:.01em;transition:opacity .15s;}
-        .qgif-btn-primary:hover{opacity:.9;}
-        .qgif-btn-primary:disabled{background:#4A6880;cursor:not-allowed;}
-        .qgif-btn-secondary{background:transparent;color:#00C8F0;border:1px solid rgba(0,200,240,0.4);border-radius:7px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;transition:background .15s;}
-        .qgif-btn-secondary:hover{background:rgba(0,200,240,0.08);}
-
-        /* ── FORM INPUTS ── */
-        .qgif-input{background:#08162A;border:1px solid rgba(0,200,240,0.15);border-radius:7px;padding:9px 12px;color:#D8E8FF;font-size:13px;width:100%;}
-        .qgif-input:focus{border-color:#00C8F0;}
-        .qgif-select{background:#08162A;border:1px solid rgba(0,200,240,0.15);border-radius:7px;padding:9px 12px;color:#D8E8FF;font-size:13px;width:100%;}
-
-        /* ── STAT BOXES ── */
-        .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-bottom:14px;}
-        .stat-box{background:#08162A;border-radius:8px;padding:10px 12px;text-align:center;}
-        .stat-label{font-family:'Courier New',monospace;font-size:9px;color:#4A6880;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;}
-        .stat-value{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:18px;font-weight:700;}
-
-        /* ── SECTION HEADERS ── */
-        .section-label{font-family:'Courier New',monospace;font-size:9px;color:#4A6880;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(0,200,240,0.08);}
-
-        /* ── ALERT BARS ── */
-        .alert-critical{border-left:3px solid #CC2222;background:rgba(204,34,34,0.06);}
-        .alert-warning{border-left:3px solid #CC6600;background:rgba(204,102,0,0.06);}
-        .alert-watch{border-left:3px solid #F5C842;background:rgba(245,200,66,0.06);}
-        .alert-improvement{border-left:3px solid #00875A;background:rgba(0,135,90,0.06);}
-
-        /* ── TAB SCROLL ── */
-        .tab-scroll{
-          display:flex;
-          gap:4px;
-          overflow-x:auto;
-          overflow-y:hidden;
-          -webkit-overflow-scrolling:touch;
-          scrollbar-width:none;
-          flex:1;
-          padding:4px 0;
-        }
+        .tab-inner{padding:20px;max-width:880px;}
+        .tab-scroll{display:flex;gap:2px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex:1;padding:0 2px;}
         .tab-scroll::-webkit-scrollbar{display:none;}
-        .tab-scroll button{flex-shrink:0;}
 
-        /* ── MOBILE ── */
+        /* leaflet */
+        .qgif-tooltip{background:#071526!important;border:1px solid rgba(14,165,233,.25)!important;color:#E2EEF9!important;font-family:'Inter',sans-serif!important;font-size:12px!important;padding:8px 12px!important;border-radius:6px!important;}
+        .leaflet-container{background:#040D1A!important;}
+        .leaflet-control-attribution{background:rgba(7,21,38,.9)!important;color:#3D5A73!important;font-size:9px!important;}
+        .leaflet-control-attribution a{color:#0EA5E9!important;}
+        .leaflet-control-zoom a{background:#071526!important;color:#0EA5E9!important;border-color:rgba(14,165,233,.2)!important;}
+        .leaflet-control-zoom a:hover{background:#0A1E33!important;}
+        .leaflet-container{touch-action:pan-x pan-y!important;}
+        .qgif-hotspot{background:#071526!important;border:1px solid rgba(239,68,68,.3)!important;color:#FCA5A5!important;}
+
+        /* mobile */
         @media(max-width:768px){
-          .desktop-sidebar{display:none!important}
-          .desktop-right{display:none!important}
-          .mobile-bottom{display:flex!important}
-          .main-grid{grid-template-columns:1fr!important}
+          .desktop-sidebar,.desktop-right{display:none!important;}
+          .mobile-bottom{display:flex!important;}
+          .main-grid{grid-template-columns:1fr!important;}
+          .hide-mobile{display:none!important;}
           .tab-inner{padding:12px;}
           .stat-grid{grid-template-columns:repeat(3,1fr)!important;}
-          .hide-mobile{display:none!important;}
-          .qgif-btn-primary,.qgif-btn-secondary{padding:9px 14px;font-size:12px;}
         }
-        @media(min-width:769px){
-          .mobile-bottom{display:none!important}
-        }
-        .mobile-bottom{
-          display:none;position:fixed;bottom:0;left:0;right:0;
-          background:#08162A;border-top:1px solid rgba(0,200,240,0.15);
-          z-index:2000;flex-direction:column;max-height:65vh;overflow-y:auto;
-          -webkit-overflow-scrolling:touch;
-        }
-        .leaflet-container{touch-action:pan-x pan-y!important;}
+        @media(min-width:769px){.mobile-bottom{display:none!important;}}
+        .mobile-bottom{display:none;position:fixed;bottom:0;left:0;right:0;background:#071526;border-top:1px solid rgba(14,165,233,.12);z-index:2000;flex-direction:column;max-height:65vh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+        @media(max-width:768px){.mobile-fullscreen-tab{display:flex!important;position:fixed;top:46px;left:0;right:0;bottom:0;z-index:500;background:#040D1A;overflow-y:auto;-webkit-overflow-scrolling:touch;flex-direction:column;}}
+        @media(min-width:769px){.mobile-fullscreen-tab{display:none!important;}}
       `}</style>
 
       {/* TOPBAR */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 10px",background:PANEL,borderBottom:`1px solid ${BORDER}`,height:46,gap:6}}>
-        {/* Logo */}
-        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
-          <div style={{width:26,height:26,background:"linear-gradient(135deg,#00C8F0,#8B5CF6)",borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:BG}}>Q</div>
-          <span style={{fontFamily:"'Courier New',monospace",fontSize:13,color:CYAN,whiteSpace:"nowrap",letterSpacing:".05em"}}>QGIF</span>
+      <div style={{display:"flex",alignItems:"center",padding:"0 14px",background:PANEL,borderBottom:`1px solid ${BORDER}`,height:46,gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0,paddingRight:12,borderRight:`1px solid ${BORDER}`}}>
+          <div style={{width:24,height:24,background:CYAN,borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:BG}}>Q</div>
+          <span style={{fontSize:13,fontWeight:700,color:TEXT,letterSpacing:"-.01em"}}>QGIF</span>
         </div>
-        {/* Tabs — scrollable */}
-        <div className="tab-scroll" style={{display:"flex",gap:2,flex:1,overflow:"auto",padding:"0 4px"}}>
+        <div className="tab-scroll">
           {TABS.map(tab=>(
             <button key={tab} onClick={()=>handleTabChange(tab)}
-              style={{padding:"5px 10px",borderRadius:5,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:11,cursor:"pointer",border:`1px solid ${activeTab===tab?CYAN:BORDER2}`,background:activeTab===tab?`${CYAN}14`:"transparent",color:activeTab===tab?CYAN:MUTED,whiteSpace:"nowrap",flexShrink:0,fontWeight:activeTab===tab?600:400}}>
+              style={{padding:"4px 10px",borderRadius:5,fontSize:12,fontWeight:activeTab===tab?600:400,border:`1px solid ${activeTab===tab?CYAN:BORDER2}`,background:activeTab===tab?`${CYAN}14`:"transparent",color:activeTab===tab?CYAN:MUTED,whiteSpace:"nowrap",letterSpacing:"-.01em"}}>
               {tab}
             </button>
           ))}
         </div>
-        {/* Role + time */}
-        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
-          <button onClick={()=>setShowRoleModal(true)} style={{padding:"4px 8px",borderRadius:5,border:`1px solid ${BORDER}`,background:`${CYAN}08`,color:CYAN,fontSize:10,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",cursor:"pointer",whiteSpace:"nowrap"}}>{role.icon} <span className="hide-mobile">{role.label}</span></button>
-          <span className="hide-mobile" style={{fontFamily:"'Courier New',monospace",fontSize:9,color:GREEN,whiteSpace:"nowrap"}}>
-            <span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block",marginRight:3,animation:"blink 1.8s ease-in-out infinite"}}/>{time}
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0,marginLeft:"auto"}}>
+          <button onClick={()=>setShowRoleModal(true)} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${BORDER}`,background:`${CYAN}08`,color:CYAN,fontSize:11,fontWeight:500,whiteSpace:"nowrap"}}>
+            {role.icon} <span className="hide-mobile">{role.label}</span>
+          </button>
+          <span className="hide-mobile" style={{fontFamily:"'DM Mono','Fira Mono',monospace",fontSize:10,color:GREEN,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
+            <span style={{width:5,height:5,borderRadius:"50%",background:GREEN,display:"inline-block",animation:"blink 1.8s ease-in-out infinite"}}/>{time}
           </span>
         </div>
       </div>
@@ -1474,16 +1693,11 @@ export default function App(){
 
         <div style={{overflow:"hidden",position:"relative"}}>
           <div style={{display:activeTab==="Map"?"block":"none",width:"100%",height:"100%"}}><MapTab layer={layer} activeRegion={activeRegion} onRegionClick={handleRegionClick} onCoordClick={handleCoordClick} searchQuery={searchQuery} setSearchQuery={setSearchQuery} mapCenter={mapCenter} setMapCenter={setMapCenter} showHotspots={showHotspots} setShowHotspots={setShowHotspots} showTowns={showTowns} setShowTowns={setShowTowns} clickedCoord={clickedCoord} satLoading={liveDetectLoading} satData={satData}/></div>
-          <div style={{display:activeTab==="Quantum Optimizer"?"flex":"none",width:"100%",height:"100%"}}><QuantumTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} qData={qData} qLoading={qLoading} qType={qType} setQType={setQType} runQuantum={runQuantum}/></div>
-          <div style={{display:activeTab==="Scenario Simulator"?"flex":"none",width:"100%",height:"100%"}}><ScenarioTab scRegion={scRegion} setScRegion={setScRegion} scScenario={scScenario} setScScenario={setScScenario} scIntensity={scIntensity} setScIntensity={setScIntensity} scData={scData} scLoading={scLoading} runScenario={runScenario}/></div>
-          <div style={{display:activeTab==="Risk Matrix"?"flex":"none",width:"100%",height:"100%"}}><RiskTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} riskData={riskData} riskLoading={riskLoading} runRisk={runRisk}/></div>
-          <div style={{display:activeTab==="Disease Intelligence"?"flex":"none",width:"100%",height:"100%"}}><DiseaseTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} diseaseData={diseaseData} diseaseLoading={diseaseLoading} runDisease={runDisease}/></div>
-          <div style={{display:activeTab==="Digital Lawyer"?"flex":"none",width:"100%",height:"100%"}}><LawyerTab lawyerData={lawyerData} lawyerLoading={lawyerLoading} runLawyer={runLawyer}/></div>
-          <div style={{display:activeTab==="Dam Risk"?"flex":"none",width:"100%",height:"100%"}}><DamTab damData={damData} damLoading={damLoading} runDam={runDam}/></div>
-          <div style={{display:activeTab==="Crop Insurance"?"flex":"none",width:"100%",height:"100%"}}><InsuranceTab insuranceData={insuranceData} insuranceLoading={insuranceLoading} runInsurance={runInsurance}/></div>
-          <div style={{display:activeTab==="Air Quality"?"flex":"none",width:"100%",height:"100%"}}><AirTab airData={airData} airLoading={airLoading} runAir={runAir}/></div>
-          <div style={{display:activeTab==="Criminal Network"?"flex":"none",width:"100%",height:"100%"}}><CriminalTab criminalData={criminalData} criminalLoading={criminalLoading} runCriminal={runCriminal}/></div>
+          <div style={{display:activeTab==="Intelligence"?"flex":"none",width:"100%",height:"100%",flexDirection:"column"}}><IntelligenceTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} diseaseData={diseaseData} diseaseLoading={diseaseLoading} runDisease={runDisease} riskData={riskData} riskLoading={riskLoading} runRisk={runRisk} scData={scData} scLoading={scLoading} scScenario={scScenario} setScScenario={setScScenario} scIntensity={scIntensity} setScIntensity={setScIntensity} scRegion={scRegion} setScRegion={setScRegion} runScenario={runScenario} airData={airData} airLoading={airLoading} runAir={runAir} insuranceData={insuranceData} insuranceLoading={insuranceLoading} runInsurance={runInsurance} damData={damData} damLoading={damLoading} runDam={runDam}/></div>
+          <div style={{display:activeTab==="Quantum"?"flex":"none",width:"100%",height:"100%",flexDirection:"column"}}><QuantumHubTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} qData={qData} qLoading={qLoading} qType={qType} setQType={setQType} runQuantum={runQuantum} criminalData={criminalData} criminalLoading={criminalLoading} runCriminal={runCriminal}/></div>
+          <div style={{display:activeTab==="Legal & Evidence"?"flex":"none",width:"100%",height:"100%"}}><LawyerTab lawyerData={lawyerData} lawyerLoading={lawyerLoading} runLawyer={runLawyer}/></div>
           <div style={{display:activeTab==="Monitoring"?"flex":"none",width:"100%",height:"100%",overflowY:"auto"}}><MonitoringTab monitorData={monitorData} monitorLoading={monitorLoading} runMonitor={runMonitor} dashData={dashData} dashLoading={dashLoading} loadDash={loadDash}/></div>
+          <div style={{display:activeTab==="Timeline"?"flex":"none",width:"100%",height:"100%"}}><TimelineTab timelineData={timelineData} timelineLoading={timelineLoading} runTimeline={runTimeline} activeRegion={activeRegion}/></div>
         </div>
 
         <div className="desktop-right" style={{background:PANEL,borderLeft:`1px solid ${BORDER}`,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -1672,18 +1886,18 @@ export default function App(){
         {/* Search bar */}
         <div style={{padding:"8px 10px",borderBottom:`1px solid ${BORDER}`,display:"flex",gap:6}}>
           <input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search town or region..."
-            style={{flex:1,background:P2,border:`1px solid ${CYAN}33`,borderRadius:6,padding:"7px 10px",color:TEXT,fontSize:13,outline:"none",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}/>
+            style={{flex:1,background:P2,border:`1px solid ${CYAN}33`,borderRadius:6,padding:"7px 10px",color:TEXT,fontSize:13,outline:"none",fontFamily:FB}}/>
           <button onClick={()=>{const q=searchQuery.toLowerCase();const town=GHANA_TOWNS.find(t=>t.name.toLowerCase().includes(q));const reg=Object.entries(REGION_COORDS).find(([k])=>k.toLowerCase().includes(q));if(town){setMapCenter([town.lat,town.lng,13]);handleCoordClick(town.lat,town.lng,town.name);}else if(reg){setMapCenter([reg[1].lat,reg[1].lng,10]);handleRegionClick(reg[0]);}}}
             style={{background:CYAN,border:"none",borderRadius:6,padding:"7px 14px",color:BG,fontSize:13,fontWeight:700,cursor:"pointer"}}>Go</button>
         </div>
 
         {/* Region buttons */}
         <div style={{padding:"8px 10px",borderBottom:`1px solid ${BORDER}`}}>
-          <div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:MUTED,marginBottom:5,letterSpacing:".06em",textTransform:"uppercase"}}>Tap Region</div>
+          <div style={{fontFamily:FM,fontSize:9,color:MUTED,marginBottom:5,letterSpacing:".06em",textTransform:"uppercase"}}>Tap Region</div>
           <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
             {REGIONS.map(r=>(
               <button key={r.name} onClick={()=>handleRegionClick(r.name)}
-                style={{padding:"5px 9px",borderRadius:5,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}15`:"transparent",color:activeRegion===r.name?CYAN:MUTED,fontSize:11,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",cursor:"pointer"}}>
+                style={{padding:"5px 9px",borderRadius:5,border:`1px solid ${activeRegion===r.name?CYAN:BORDER2}`,background:activeRegion===r.name?`${CYAN}15`:"transparent",color:activeRegion===r.name?CYAN:MUTED,fontSize:11,fontFamily:FB,cursor:"pointer"}}>
                 {r.name.replace(' Region','')}
               </button>
             ))}
@@ -1691,20 +1905,20 @@ export default function App(){
         </div>
 
         {/* Live detection */}
-        {liveDetectLoading&&<div style={{padding:"12px 10px",display:"flex",alignItems:"center",gap:8}}><span style={{width:6,height:6,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/><span style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:12,color:MUTED}}>Running satellite detection... 20-30 seconds</span></div>}
+        {liveDetectLoading&&<div style={{padding:"12px 10px",display:"flex",alignItems:"center",gap:8}}><span style={{width:6,height:6,borderRadius:"50%",background:AMBER,display:"inline-block",animation:"blink 1s infinite"}}/><span style={{fontFamily:FB,fontSize:12,color:MUTED}}>Running satellite detection... 20-30 seconds</span></div>}
         {!liveDetectLoading&&liveDetect&&!liveDetect._error&&(
           <div style={{padding:"10px 12px",borderBottom:`1px solid ${BORDER}`}}>
-            <div style={{fontFamily:"'Courier New',monospace",fontSize:9,color:PURPLE,marginBottom:8,letterSpacing:".06em"}}>LIVE DETECTION · {liveDetect.imagery?.current_image_date} · {liveDetect.location}</div>
+            <div style={{fontFamily:FM,fontSize:9,color:PURPLE,marginBottom:8,letterSpacing:".06em"}}>LIVE DETECTION · {liveDetect.imagery?.current_image_date} · {liveDetect.location}</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginBottom:8}}>
               {[["Mining Score",liveDetect.mining_detection?.score,"/100",liveDetect.mining_detection?.score>70?RED:liveDetect.mining_detection?.score>40?AMBER:GREEN],["Mercury Proxy",liveDetect.water_contamination?.mercury_proxy_mgl,"mg/L",liveDetect.water_contamination?.mercury_proxy_mgl>0.01?RED:GREEN],["Outbreak Risk",liveDetect.health_risk?.outbreak_probability_30days_pct,"%",liveDetect.health_risk?.outbreak_probability_30days_pct>50?RED:AMBER]].map(([label,val,unit,col])=>(
                 <div key={label} style={{background:P2,borderRadius:6,padding:"7px 8px",textAlign:"center"}}>
-                  <div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED,marginBottom:2}}>{label}</div>
-                  <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:16,fontWeight:700,color:col}}>{val}</div>
-                  <div style={{fontFamily:"'Courier New',monospace",fontSize:8,color:MUTED}}>{unit}</div>
+                  <div style={{fontFamily:FM,fontSize:8,color:MUTED,marginBottom:2}}>{label}</div>
+                  <div style={{fontFamily:FB,fontSize:16,fontWeight:700,color:col}}>{val}</div>
+                  <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>{unit}</div>
                 </div>
               ))}
             </div>
-            <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:11,color:TEXT2,lineHeight:1.5}}>{liveDetect.mining_detection?.classification}</div>
+            <div style={{fontFamily:FB,fontSize:11,color:TEXT2,lineHeight:1.5}}>{liveDetect.mining_detection?.classification}</div>
           </div>
         )}
 
@@ -1716,20 +1930,20 @@ export default function App(){
               <Tag label={prediction.severity} color={SEV_C[prediction.severity]} bg={SEV_BG[prediction.severity]}/>
               <Tag label={prediction.confidence} color={CYAN}/>
             </div>
-            <div style={{fontFamily:"Georgia,'Times New Roman',serif",fontSize:14,color:TEXT,marginBottom:6,fontWeight:"normal",lineHeight:1.4}}>{prediction.title}</div>
-            <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:11,color:TEXT,lineHeight:1.7,padding:"8px 10px",background:P2,borderRadius:7,borderLeft:`3px solid ${CYAN}`,marginBottom:8}}>{prediction.analysis}</div>
+            <div style={{fontFamily:FH,fontSize:14,color:TEXT,marginBottom:6,fontWeight:"normal",lineHeight:1.4}}>{prediction.title}</div>
+            <div style={{fontFamily:FB,fontSize:11,color:TEXT,lineHeight:1.7,padding:"8px 10px",background:P2,borderRadius:7,borderLeft:`3px solid ${CYAN}`,marginBottom:8}}>{prediction.analysis}</div>
             {(prediction.findings||[]).slice(0,2).map((f,i)=>(
               <div key={i} style={{display:"flex",gap:8,padding:"6px 10px",background:P2,borderRadius:6,marginBottom:5}}>
                 <div style={{width:6,height:6,borderRadius:"50%",flexShrink:0,marginTop:4,background:{critical:RED,high:AMBER,medium:"#F5C842",low:GREEN}[f.severity]||CYAN}}/>
-                <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:11,color:TEXT,lineHeight:1.6}}>{f.text}</div>
+                <div style={{fontFamily:FB,fontSize:11,color:TEXT,lineHeight:1.6}}>{f.text}</div>
               </div>
             ))}
           </div>
         )}
         {!loading&&!prediction&&!liveDetect&&(
           <div style={{padding:"20px 12px",textAlign:"center"}}>
-            <div style={{fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",fontSize:13,color:MUTED,marginBottom:4}}>Tap a region or anywhere on the map</div>
-            <div style={{fontFamily:"'Courier New',monospace",fontSize:10,color:MUTED}}>Live satellite analysis will appear here</div>
+            <div style={{fontFamily:FB,fontSize:13,color:MUTED,marginBottom:4}}>Tap a region or anywhere on the map</div>
+            <div style={{fontFamily:FM,fontSize:10,color:MUTED}}>Live satellite analysis will appear here</div>
           </div>
         )}
         <div style={{height:20}}/>
@@ -1739,17 +1953,12 @@ export default function App(){
       {/* MOBILE NON-MAP TABS — full screen content */}
       {activeTab!=="Map"&&(
       <div className="mobile-fullscreen-tab">
-        <style>{`@media(max-width:768px){.mobile-fullscreen-tab{display:flex!important;position:fixed;top:46px;left:0;right:0;bottom:0;z-index:500;background:#050E1C;overflow-y:auto;-webkit-overflow-scrolling:touch;flex-direction:column;}} @media(min-width:769px){.mobile-fullscreen-tab{display:none!important;}}`}</style>
+        <style>{`@media(max-width:768px){.mobile-fullscreen-tab{display:flex!important;position:fixed;top:46px;left:0;right:0;bottom:0;z-index:500;background:#040D1A;overflow-y:auto;-webkit-overflow-scrolling:touch;flex-direction:column;}} @media(min-width:769px){.mobile-fullscreen-tab{display:none!important;}}`}</style>
+        {activeTab==="Intelligence"&&<IntelligenceTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} diseaseData={diseaseData} diseaseLoading={diseaseLoading} runDisease={runDisease} riskData={riskData} riskLoading={riskLoading} runRisk={runRisk} scData={scData} scLoading={scLoading} scScenario={scScenario} setScScenario={setScScenario} scIntensity={scIntensity} setScIntensity={setScIntensity} scRegion={scRegion} setScRegion={setScRegion} runScenario={runScenario} airData={airData} airLoading={airLoading} runAir={runAir} insuranceData={insuranceData} insuranceLoading={insuranceLoading} runInsurance={runInsurance} damData={damData} damLoading={damLoading} runDam={runDam}/>}
+        {activeTab==="Quantum"&&<QuantumHubTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} qData={qData} qLoading={qLoading} qType={qType} setQType={setQType} runQuantum={runQuantum} criminalData={criminalData} criminalLoading={criminalLoading} runCriminal={runCriminal}/>}
+        {activeTab==="Legal & Evidence"&&<LawyerTab lawyerData={lawyerData} lawyerLoading={lawyerLoading} runLawyer={runLawyer}/>}
         {activeTab==="Monitoring"&&<MonitoringTab monitorData={monitorData} monitorLoading={monitorLoading} runMonitor={runMonitor} dashData={dashData} dashLoading={dashLoading} loadDash={loadDash}/>}
-        {activeTab==="Quantum Optimizer"&&<QuantumTab activeRegion={activeRegion} setActiveRegion={setActiveRegion} qData={qData} qLoading={qLoading} qType={qType} setQType={setQType} runQuantum={runQuantum}/>}
-        {activeTab==="Scenario Simulator"&&<ScenarioTab scData={scData} scLoading={scLoading} scScenario={scScenario} setScScenario={setScScenario} scIntensity={scIntensity} setScIntensity={setScIntensity} scRegion={scRegion} setScRegion={setScRegion} runScenario={runScenario}/>}
-        {activeTab==="Risk Matrix"&&<RiskTab riskData={riskData} riskLoading={riskLoading} runRisk={runRisk} activeRegion={activeRegion} setActiveRegion={setActiveRegion}/>}
-        {activeTab==="Disease Intelligence"&&<DiseaseTab diseaseData={diseaseData} diseaseLoading={diseaseLoading} runDisease={runDisease} activeRegion={activeRegion} setActiveRegion={setActiveRegion}/>}
-        {activeTab==="Digital Lawyer"&&<LawyerTab lawyerData={lawyerData} lawyerLoading={lawyerLoading} runLawyer={runLawyer}/>}
-        {activeTab==="Dam Risk"&&<DamTab damData={damData} damLoading={damLoading} runDam={runDam}/>}
-        {activeTab==="Crop Insurance"&&<InsuranceTab insuranceData={insuranceData} insuranceLoading={insuranceLoading} runInsurance={runInsurance}/>}
-        {activeTab==="Air Quality"&&<AirTab airData={airData} airLoading={airLoading} runAir={runAir}/>}
-        {activeTab==="Criminal Network"&&<CriminalTab criminalData={criminalData} criminalLoading={criminalLoading} runCriminal={runCriminal}/>}
+        {activeTab==="Timeline"&&<TimelineTab timelineData={timelineData} timelineLoading={timelineLoading} runTimeline={runTimeline} activeRegion={activeRegion}/>}
       </div>
       )}
 
