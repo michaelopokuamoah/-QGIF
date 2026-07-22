@@ -248,7 +248,8 @@ function FlyToHandler({center}){
   const map=useMapEvents({});
   useEffect(()=>{
     if(center&&center.length>=2){
-      map.flyTo([center[0],center[1]],center[2]||13,{duration:1.2});
+      // Only pan to location, don't zoom in — prevents unwanted zoom behaviour
+      map.panTo([center[0],center[1]],{animate:true,duration:0.5});
     }
   },[center,map]);
   return null;
@@ -1447,7 +1448,10 @@ function QuantumHubTab({
 function AnnotateTab(){
   const ss={fontFamily:"Inter,'Segoe UI',system-ui,sans-serif"};
   const sm={fontFamily:"'DM Mono','Fira Mono',monospace"};
-  const API="https://qgif-backend.onrender.com";
+  // Use local backend when running on localhost, Render when deployed
+  const API=typeof window!=="undefined"&&window.location.hostname==="localhost"
+    ?"http://localhost:5000"
+    :"https://qgif-backend.onrender.com";
 
   const LABELS=[
     {key:"mining",label:"Mining",color:"#EF4444",desc:"Illegal mining pit, excavation, or tailings"},
@@ -1455,9 +1459,11 @@ function AnnotateTab(){
     {key:"water",label:"Water",color:"#0EA5E9",desc:"River, lake, or water body"},
     {key:"farmland",label:"Farmland",color:"#F59E0B",desc:"Agricultural land, crops, or farm clearing"},
     {key:"settlement",label:"Settlement",color:"#8B5CF6",desc:"Town, village, buildings, or urban area"},
+    {key:"uncertain",label:"Uncertain",color:"#94A3B8",desc:"Unclear — needs second reviewer"},
   ];
 
   const KNOWN_MINING=[
+    // Original 8 — core Western Region gold belt
     {name:"Tarkwa (Western Region)",lat:5.31,lng:-1.99,type:"mining"},
     {name:"Obuasi (Ashanti Region)",lat:6.20,lng:-1.68,type:"mining"},
     {name:"Prestea (Western Region)",lat:5.43,lng:-2.14,type:"mining"},
@@ -1466,9 +1472,61 @@ function AnnotateTab(){
     {name:"Konongo (Ashanti Region)",lat:6.62,lng:-1.22,type:"mining"},
     {name:"Bibiani (Western Region)",lat:6.46,lng:-2.32,type:"mining"},
     {name:"Amenfi (Western Region)",lat:5.75,lng:-2.35,type:"mining"},
+    // 6 additional known mining areas
+    {name:"Kenyase (Brong-Ahafo)",lat:7.05,lng:-2.39,type:"mining"},
+    {name:"Akwatia (Eastern Region)",lat:6.05,lng:-0.81,type:"mining"},
+    {name:"Manso Nkwanta (Ashanti)",lat:6.34,lng:-2.05,type:"mining"},
+    {name:"Sefwi Bekwai (Western North)",lat:6.21,lng:-2.58,type:"mining"},
+    {name:"Adansi (Ashanti)",lat:6.13,lng:-1.49,type:"mining"},
+    {name:"Pra River near Twifo Praso",lat:5.62,lng:-1.55,type:"mining"},
+    // Additional verified Ghana gold belt mining sites
+    {name:"Wassa Akropong (Western)",lat:5.49,lng:-2.08,type:"mining"},
+    {name:"Hemang (Central Region)",lat:5.70,lng:-1.85,type:"mining"},
+    {name:"Nsuta (Western Region)",lat:5.14,lng:-1.88,type:"mining"},
+    {name:"Ayanfuri (Central Region)",lat:5.93,lng:-1.97,type:"mining"},
+    {name:"Fomena (Ashanti Region)",lat:6.27,lng:-1.55,type:"mining"},
+    {name:"Jacobu (Ashanti Region)",lat:6.38,lng:-1.72,type:"mining"},
+    {name:"Abirem (Eastern Region)",lat:6.17,lng:-1.07,type:"mining"},
+    {name:"Oda (Eastern Region)",lat:5.92,lng:-0.98,type:"mining"},
+    {name:"Afoako (Eastern Region)",lat:6.08,lng:-0.92,type:"mining"},
+    {name:"Anyinam (Eastern Region)",lat:6.20,lng:-0.88,type:"mining"},
+    {name:"Ntronang (Eastern Region)",lat:6.35,lng:-0.75,type:"mining"},
+    {name:"Asuom (Eastern Region)",lat:6.42,lng:-0.68,type:"mining"},
+    {name:"Ankobra River Zone (Western)",lat:5.18,lng:-2.32,type:"mining"},
+    {name:"Bonsa River Zone (Western)",lat:5.02,lng:-1.97,type:"mining"},
+    {name:"Aboso (Western Region)",lat:5.36,lng:-1.94,type:"mining"},
+    {name:"Damang (Western Region)",lat:5.54,lng:-1.98,type:"mining"},
+    {name:"Iduapriem (Western Region)",lat:5.22,lng:-1.96,type:"mining"},
+    {name:"Nzema (Western Region)",lat:4.92,lng:-2.15,type:"mining"},
+    {name:"Wassa Amenfi West",lat:5.67,lng:-2.47,type:"mining"},
+    {name:"Wassa Amenfi East",lat:5.81,lng:-2.19,type:"mining"},
+    {name:"Asankrangwa (Western)",lat:5.78,lng:-2.52,type:"mining"},
+    {name:"Enchi (Western Region)",lat:5.83,lng:-2.82,type:"mining"},
+    {name:"Sefwi Wiawso (Western)",lat:6.21,lng:-2.49,type:"mining"},
+    {name:"Juaboso (Western Region)",lat:6.73,lng:-2.74,type:"mining"},
+    {name:"Bia River mining zone",lat:6.38,lng:-3.05,type:"mining"},
+    {name:"Tano River mining zone (Brong-Ahafo)",lat:7.28,lng:-2.51,type:"mining"},
+    {name:"Offin River Zone (Ashanti)",lat:6.45,lng:-1.88,type:"mining"},
+    {name:"Birim River Zone (Eastern)",lat:6.12,lng:-1.20,type:"mining"},
+    {name:"Anum (Eastern Region)",lat:6.58,lng:-0.70,type:"mining"},
+    {name:"Kwabeng (Eastern Region)",lat:6.33,lng:-0.58,type:"mining"},
+    {name:"Asiakwa (Eastern Region)",lat:6.50,lng:-0.63,type:"mining"},
+    {name:"Akim Oda (Eastern Region)",lat:5.93,lng:-0.99,type:"mining"},
+    {name:"Akim Swedru (Eastern Region)",lat:6.00,lng:-0.73,type:"mining"},
+    {name:"Akim Tafo (Eastern Region)",lat:6.22,lng:-0.73,type:"mining"},
+    {name:"Mamponteng (Ashanti)",lat:6.80,lng:-1.38,type:"mining"},
+    {name:"Offinso (Ashanti Region)",lat:7.07,lng:-1.65,type:"mining"},
+    {name:"Tepa (Ashanti Region)",lat:6.98,lng:-2.01,type:"mining"},
+    {name:"Kukuom (Brong-Ahafo)",lat:7.12,lng:-2.56,type:"mining"},
+    {name:"Goaso (Brong-Ahafo)",lat:6.80,lng:-2.52,type:"mining"},
+    {name:"Hwidiem (Brong-Ahafo)",lat:6.90,lng:-2.36,type:"mining"},
+    {name:"Dormaa Ahenkro (Brong-Ahafo)",lat:7.30,lng:-2.85,type:"mining"},
+    {name:"Nkoranza (Brong-Ahafo)",lat:7.55,lng:-1.70,type:"mining"},
+    {name:"Pru River mining zone",lat:8.01,lng:-1.18,type:"mining"},
   ];
 
   const KNOWN_CLEAN=[
+    // Original 8
     {name:"Lawra (Upper West Region)",lat:10.63,lng:-2.91,type:"forest"},
     {name:"Wa (Upper West Region)",lat:10.06,lng:-2.50,type:"forest"},
     {name:"Damongo (Northern Region)",lat:9.08,lng:-1.82,type:"farmland"},
@@ -1477,9 +1535,41 @@ function AnnotateTab(){
     {name:"Winneba (Central Region)",lat:5.35,lng:-0.63,type:"settlement"},
     {name:"Cape Coast (Central Region)",lat:5.10,lng:-1.24,type:"settlement"},
     {name:"Hohoe (Volta Region)",lat:7.15,lng:0.47,type:"forest"},
+    // 6 new settlements
+    {name:"Accra (Greater Accra) — capital",lat:5.56,lng:-0.21,type:"settlement"},
+    {name:"Kumasi (Ashanti) — second city",lat:6.69,lng:-1.62,type:"settlement"},
+    {name:"Tamale (Northern Region) — northern capital",lat:9.40,lng:-0.84,type:"settlement"},
+    {name:"Sekondi-Takoradi (Western) — port city",lat:4.93,lng:-1.74,type:"settlement"},
+    {name:"Sunyani (Bono) — university town",lat:7.34,lng:-2.33,type:"settlement"},
+    {name:"Ho (Volta) — regional capital",lat:6.61,lng:0.47,type:"settlement"},
+    // 8 new protected areas
+    {name:"Kakum National Park (Central) — protected forest",lat:5.35,lng:-1.38,type:"forest"},
+    {name:"Mole National Park (Savannah) — protected savanna",lat:9.27,lng:-1.85,type:"forest"},
+    {name:"Bui National Park (Bono) — protected forest",lat:8.30,lng:-2.31,type:"forest"},
+    {name:"Lake Volta near Yeji (Bono East) — clean water",lat:8.21,lng:-0.66,type:"water"},
+    {name:"Atwima Mponua Forest Reserve (Ashanti)",lat:6.50,lng:-2.05,type:"forest"},
+    {name:"Bia Conservation Area (Western North) — primary forest",lat:6.55,lng:-3.08,type:"forest"},
+    {name:"Owabi Wildlife Sanctuary (Ashanti) — wetland",lat:6.76,lng:-1.69,type:"water"},
+    {name:"Lake Bosumtwi (Ashanti) — crater lake",lat:6.50,lng:-1.41,type:"water"},
   ];
 
   const ALL_LOCATIONS=[...KNOWN_MINING,...KNOWN_CLEAN];
+
+  // Ghana geographic bounds for random sampling
+  const GHANA_BOUNDS={lat_min:4.7,lat_max:11.1,lng_min:-3.2,lng_max:1.1};
+  const generateRandomLocation=()=>{
+    const lat=GHANA_BOUNDS.lat_min+Math.random()*(GHANA_BOUNDS.lat_max-GHANA_BOUNDS.lat_min);
+    const lng=GHANA_BOUNDS.lng_min+Math.random()*(GHANA_BOUNDS.lng_max-GHANA_BOUNDS.lng_min);
+    return {
+      name:`Random Location (${lat.toFixed(3)}°N, ${lng.toFixed(3)}°E)`,
+      lat:Math.round(lat*1000)/1000,
+      lng:Math.round(lng*1000)/1000,
+      type:"random"
+    };
+  };
+
+  const [mode,setMode]=useState("known"); // "known" or "random"
+  const [randomLoc,setRandomLoc]=useState(null);
 
   const [annotations,setAnnotations]=useState(()=>{
     try{const s=localStorage.getItem("qgif_annotations");return s?JSON.parse(s):[];}
@@ -1497,8 +1587,7 @@ function AnnotateTab(){
     try{localStorage.setItem("qgif_annotations",JSON.stringify(ann));}catch(e){}
   };
 
-  const loadLocation=async(idx)=>{
-    const loc=ALL_LOCATIONS[idx];
+  const loadLocationByCoords=async(loc)=>{
     if(!loc)return;
     setLoading(true);setCurrentData(null);setError(null);
     try{
@@ -1507,17 +1596,45 @@ function AnnotateTab(){
         body:JSON.stringify({lat:loc.lat,lng:loc.lng,name:loc.name})
       });
       const d=await r.json();
-      setCurrentData({...d,location:loc});
+      const flat={
+        ...d,
+        location:loc,
+        ndvi_mean:d.satellite_indices?.ndvi_mean||0,
+        ndvi_p10:d.satellite_indices?.ndvi_p10||0,
+        bsi_mean:d.satellite_indices?.bsi_mean||0,
+        bsi_change_mean:d.satellite_indices?.bsi_change_from_baseline||0,
+        mndwi_mean:d.satellite_indices?.mndwi_mean||0,
+        ior_mean:d.satellite_indices?.iron_oxide_ratio||0,
+        cmr_mean:d.satellite_indices?.clay_mineral_ratio||0,
+        ndvi_change_mean:d.satellite_indices?.ndvi_change_from_baseline||0,
+        water_fraction_pct:d.satellite_indices?.water_coverage_pct||0,
+        current_date:d.imagery?.current_image_date||"",
+        mining_score:d.mining_detection?.score||0,
+      };
+      setCurrentData(flat);
     }catch(e){
       setError("Could not load satellite data: "+e.message);
     }finally{setLoading(false);}
   };
 
-  useEffect(()=>{loadLocation(currentIdx);},[currentIdx]);
+  const loadLocation=async(idx)=>{
+    const loc=ALL_LOCATIONS[idx];
+    await loadLocationByCoords(loc);
+  };
+
+  const loadRandomLocation=async()=>{
+    const loc=generateRandomLocation();
+    setRandomLoc(loc);
+    setMode("random");
+    await loadLocationByCoords(loc);
+  };
+
+  useEffect(()=>{if(mode==="known")loadLocation(currentIdx);},[currentIdx,mode]);
 
   const handleLabel=(labelKey)=>{
     if(!currentData)return;
-    const loc=ALL_LOCATIONS[currentIdx];
+    const loc=mode==="random"?randomLoc:ALL_LOCATIONS[currentIdx];
+    if(!loc)return;
     const ann={
       id:Date.now(),
       annotator:annotatorName,
@@ -1527,6 +1644,7 @@ function AnnotateTab(){
       lng:loc.lng,
       label:labelKey,
       suggested_label:loc.type,
+      source:mode==="random"?"random_sample":"known_location",
       satellite_date:currentData.current_date||"",
       ndvi_mean:currentData.ndvi_mean||0,
       ndvi_p10:currentData.ndvi_p10||0,
@@ -1538,26 +1656,45 @@ function AnnotateTab(){
       ndvi_change:currentData.ndvi_change_mean||0,
       degradation_gap:Math.round(((currentData.ndvi_mean||0)-(currentData.ndvi_p10||0))*1000)/1000,
       water_fraction:currentData.water_fraction_pct||0,
+      mining_score:currentData.mining_score||0,
     };
     const updated=[...annotations,ann];
     saveAnnotations(updated);
-    // Move to next location
-    if(currentIdx<ALL_LOCATIONS.length-1){
-      setCurrentIdx(currentIdx+1);
+    // Advance based on mode
+    if(mode==="random"){
+      loadRandomLocation(); // get next random
     }else{
-      setCurrentIdx(0); // Loop back
+      if(currentIdx<ALL_LOCATIONS.length-1){
+        setCurrentIdx(currentIdx+1);
+      }else{
+        setCurrentIdx(0);
+      }
     }
   };
 
   const skipLocation=()=>{
-    if(currentIdx<ALL_LOCATIONS.length-1) setCurrentIdx(currentIdx+1);
-    else setCurrentIdx(0);
+    if(mode==="random"){
+      loadRandomLocation();
+    }else{
+      if(currentIdx<ALL_LOCATIONS.length-1) setCurrentIdx(currentIdx+1);
+      else setCurrentIdx(0);
+    }
   };
 
   const exportCSV=()=>{
     if(annotations.length===0)return;
-    const headers=["id","annotator","annotated_at","location_name","lat","lng","label","suggested_label","satellite_date","ndvi_mean","ndvi_p10","bsi_mean","bsi_change","mndwi_mean","ior_mean","cmr_mean","ndvi_change","degradation_gap","water_fraction"];
-    const rows=annotations.map(a=>headers.map(h=>a[h]??'').join(','));
+    // Filter: include all annotations EXCEPT uncertain ones that have not been reviewed
+    // Professor Nimbe requirement #4: "weak labels do not pollute the training data"
+    const trainable=annotations.filter(a=>a.label!=="uncertain"||a.reviewed_by);
+    if(trainable.length===0){alert("No annotations ready for training. Mark labels or send uncertain ones for second review.");return;}
+    const headers=["id","annotator","annotated_at","location_name","lat","lng","label","original_label","reviewed_by","reviewed_at","suggested_label","source","satellite_date","ndvi_mean","ndvi_p10","bsi_mean","bsi_change","mndwi_mean","ior_mean","cmr_mean","ndvi_change","degradation_gap","water_fraction","mining_score"];
+    const rows=trainable.map(a=>headers.map(h=>{
+      const v=a[h];
+      if(v===undefined||v===null)return'';
+      // Quote strings containing commas
+      const s=String(v);
+      return s.includes(',')?`"${s}"`:s;
+    }).join(','));
     const csv=[headers.join(','),...rows].join('\n');
     const blob=new Blob([csv],{type:'text/csv'});
     const url=URL.createObjectURL(blob);
@@ -1565,6 +1702,7 @@ function AnnotateTab(){
     a.href=url;a.download='qgif_training_dataset.csv';
     document.body.appendChild(a);a.click();
     document.body.removeChild(a);URL.revokeObjectURL(url);
+    alert(`Exported ${trainable.length} training-ready annotations.\n${annotations.length-trainable.length} uncertain annotations excluded (need second review).`);
   };
 
   const clearAnnotations=()=>{
@@ -1580,7 +1718,11 @@ function AnnotateTab(){
   const total=annotations.length;
   const target=500;
   const progress=Math.min(100,Math.round((total/target)*100));
-  const loc=ALL_LOCATIONS[currentIdx];
+  const loc=mode==="random"?randomLoc:ALL_LOCATIONS[currentIdx];
+  const miningCount=counts.mining||0;
+  const cleanCount=(counts.forest||0)+(counts.water||0)+(counts.farmland||0)+(counts.settlement||0);
+  const uncertainCount=counts.uncertain||0;
+  const balanceWarning=miningCount>0&&cleanCount>0?(Math.max(miningCount,cleanCount)/Math.min(miningCount,cleanCount)>3):false;
 
   return(
     <div className="tab-content" style={{background:BG}}>
@@ -1592,32 +1734,61 @@ function AnnotateTab(){
           <div style={{...sm,fontSize:9,color:MUTED,letterSpacing:".1em",textTransform:"uppercase"}}>Label satellite locations to train the mining detection model</div>
         </div>
 
+        {/* MODE SWITCHER */}
+        <div className="card" style={{marginBottom:16,display:"flex",gap:6,padding:"8px"}}>
+          <button onClick={()=>{setMode("known");setCurrentIdx(0);}} style={{flex:1,padding:"10px 14px",borderRadius:6,border:`1px solid ${mode==="known"?CYAN:BORDER}`,background:mode==="known"?`${CYAN}14`:"transparent",color:mode==="known"?CYAN:MUTED,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"Inter,sans-serif"}}>
+            Known Locations ({ALL_LOCATIONS.length} preloaded)
+          </button>
+          <button onClick={loadRandomLocation} style={{flex:1,padding:"10px 14px",borderRadius:6,border:`1px solid ${mode==="random"?PURPLE:BORDER}`,background:mode==="random"?`${PURPLE}14`:"transparent",color:mode==="random"?PURPLE:MUTED,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"Inter,sans-serif"}}>
+            Random Ghana Location
+          </button>
+        </div>
+
         {/* Progress */}
         <div className="card" style={{marginBottom:16}}>
           <div className="section-label">Dataset Progress</div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
             <div style={{...sm,fontSize:13,color:CYAN,fontWeight:500}}>{total} labeled</div>
-            <div style={{...sm,fontSize:12,color:MUTED}}>{target - total} remaining to reach target of {target}</div>
+            <div style={{...sm,fontSize:12,color:MUTED}}>{Math.max(0,target - total)} remaining to reach target of {target}</div>
           </div>
           <div style={{height:8,background:"rgba(14,165,233,.1)",borderRadius:4,marginBottom:12,overflow:"hidden"}}>
             <div style={{height:"100%",width:`${progress}%`,background:`linear-gradient(90deg,${CYAN},${GREEN})`,borderRadius:4,transition:"width .5s ease"}}/>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:6}}>
+          {/* Balance indicator */}
+          <div style={{display:"flex",gap:8,marginBottom:10,background:BG,padding:"8px 10px",borderRadius:6}}>
+            <div style={{flex:1,textAlign:"center"}}>
+              <div style={{...sm,fontSize:9,color:MUTED}}>MINING</div>
+              <div style={{...sm,fontSize:16,fontWeight:600,color:RED}}>{miningCount}</div>
+            </div>
+            <div style={{width:1,background:BORDER}}/>
+            <div style={{flex:1,textAlign:"center"}}>
+              <div style={{...sm,fontSize:9,color:MUTED}}>NOT MINING</div>
+              <div style={{...sm,fontSize:16,fontWeight:600,color:GREEN}}>{cleanCount}</div>
+            </div>
+            <div style={{width:1,background:BORDER}}/>
+            <div style={{flex:1,textAlign:"center"}}>
+              <div style={{...sm,fontSize:9,color:MUTED}}>UNCERTAIN</div>
+              <div style={{...sm,fontSize:16,fontWeight:600,color:"#94A3B8"}}>{uncertainCount}</div>
+            </div>
+          </div>
+          {balanceWarning&&<div style={{...sm,fontSize:10,color:AMBER,marginBottom:8}}>⚠ Dataset is unbalanced — try to add more of the smaller class</div>}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
             {LABELS.map(l=>(
-              <div key={l.key} style={{background:BG,borderRadius:6,padding:"8px 6px",textAlign:"center",border:`1px solid ${l.color}22`}}>
-                <div style={{...sm,fontSize:18,fontWeight:600,color:l.color}}>{counts[l.key]||0}</div>
-                <div style={{...sm,fontSize:9,color:MUTED,marginTop:2}}>{l.label}</div>
+              <div key={l.key} style={{background:BG,borderRadius:6,padding:"8px 4px",textAlign:"center",border:`1px solid ${l.color}22`}}>
+                <div style={{...sm,fontSize:16,fontWeight:600,color:l.color}}>{counts[l.key]||0}</div>
+                <div style={{...sm,fontSize:8,color:MUTED,marginTop:2}}>{l.label}</div>
               </div>
             ))}
           </div>
         </div>
 
         {/* Annotator name */}
-        <div className="card" style={{marginBottom:16,display:"flex",gap:10,alignItems:"center"}}>
+        <div className="card" style={{marginBottom:16,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
           <div style={{...sm,fontSize:10,color:MUTED,whiteSpace:"nowrap"}}>ANNOTATOR</div>
           <input className="input" value={annotatorName} onChange={e=>setAnnotatorName(e.target.value)} style={{maxWidth:200}}/>
-          <div style={{...sm,fontSize:10,color:MUTED,flex:1}}>Location {currentIdx+1} of {ALL_LOCATIONS.length}</div>
+          <div style={{...sm,fontSize:10,color:MUTED,flex:1}}>{mode==="random"?"Random sampling mode":`Location ${currentIdx+1} of ${ALL_LOCATIONS.length}`}</div>
           <button className="btn-outline btn btn-sm" onClick={skipLocation}>Skip</button>
+          {mode==="random"&&<button className="btn-outline btn btn-sm" onClick={loadRandomLocation}>New Random</button>}
         </div>
 
         {/* Current location */}
@@ -1628,9 +1799,9 @@ function AnnotateTab(){
               <div style={{...ss,fontSize:15,fontWeight:600,color:TEXT}}>{loc?.name}</div>
               <div style={{...sm,fontSize:10,color:MUTED,marginTop:2}}>{loc?.lat}°N, {loc?.lng}°E</div>
             </div>
-            <div style={{background:`${loc?.type==="mining"?RED:GREEN}14`,border:`1px solid ${loc?.type==="mining"?RED:GREEN}44`,borderRadius:6,padding:"4px 10px"}}>
-              <div style={{...sm,fontSize:9,color:MUTED}}>SUGGESTED</div>
-              <div style={{...sm,fontSize:11,fontWeight:600,color:loc?.type==="mining"?RED:GREEN}}>{loc?.type?.toUpperCase()}</div>
+            <div style={{background:`${loc?.type==="mining"?RED:loc?.type==="random"?PURPLE:GREEN}14`,border:`1px solid ${loc?.type==="mining"?RED:loc?.type==="random"?PURPLE:GREEN}44`,borderRadius:6,padding:"4px 10px"}}>
+              <div style={{...sm,fontSize:9,color:MUTED}}>{loc?.type==="random"?"SOURCE":"SUGGESTED"}</div>
+              <div style={{...sm,fontSize:11,fontWeight:600,color:loc?.type==="mining"?RED:loc?.type==="random"?PURPLE:GREEN}}>{loc?.type==="random"?"RANDOM SAMPLE":loc?.type?.toUpperCase()}</div>
             </div>
           </div>
 
@@ -1695,6 +1866,49 @@ function AnnotateTab(){
             })}
           </div>
         </div>
+
+        {/* Review Queue — Two-Reviewer System for Uncertain Labels */}
+        {annotations.filter(a=>a.label==="uncertain"&&!a.reviewed_by).length>0&&(
+          <div className="card" style={{marginBottom:16,borderColor:`rgba(148,163,184,.4)`}}>
+            <div className="section-label" style={{color:"#94A3B8"}}>Review Queue — Uncertain Labels Awaiting Second Reviewer</div>
+            <div style={{...ss,fontSize:12,color:TEXT2,marginBottom:12,lineHeight:1.6}}>
+              The following locations were marked uncertain by the first annotator. A second reviewer must give them a final label before they enter the training dataset (Professor Nimbe's requirement #3).
+            </div>
+            {annotations.filter(a=>a.label==="uncertain"&&!a.reviewed_by).map(a=>(
+              <div key={a.id} className="card" style={{padding:"10px 12px",marginBottom:8,background:BG}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6,flexWrap:"wrap",gap:6}}>
+                  <div>
+                    <div style={{...ss,fontSize:12,fontWeight:600,color:TEXT}}>{a.location_name}</div>
+                    <div style={{...sm,fontSize:9,color:MUTED,marginTop:2}}>Marked uncertain by: {a.annotator} on {a.annotated_at?.split('T')[0]}</div>
+                  </div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    <div style={{...sm,fontSize:10,color:MUTED}}>NDVI: <b style={{color:TEXT}}>{a.ndvi_mean}</b></div>
+                    <div style={{...sm,fontSize:10,color:MUTED}}>BSI: <b style={{color:TEXT}}>{a.bsi_mean}</b></div>
+                    <div style={{...sm,fontSize:10,color:MUTED}}>Gap: <b style={{color:TEXT}}>{a.degradation_gap}</b></div>
+                    <div style={{...sm,fontSize:10,color:MUTED}}>Mining Score: <b style={{color:a.mining_score>50?RED:GREEN}}>{a.mining_score}</b></div>
+                  </div>
+                </div>
+                <div style={{...sm,fontSize:9,color:MUTED,marginBottom:6}}>SECOND REVIEWER FINAL LABEL:</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {LABELS.filter(l=>l.key!=="uncertain").map(l=>(
+                    <button key={l.key} onClick={()=>{
+                      const reviewerName=window.prompt("Enter your name as second reviewer:",annotatorName);
+                      if(!reviewerName||reviewerName===a.annotator){
+                        if(reviewerName===a.annotator)alert("Second reviewer must be different from the first annotator");
+                        return;
+                      }
+                      const updated=annotations.map(x=>x.id===a.id?{...x,label:l.key,original_label:"uncertain",reviewed_by:reviewerName,reviewed_at:new Date().toISOString()}:x);
+                      saveAnnotations(updated);
+                    }}
+                      style={{padding:"6px 12px",borderRadius:5,border:`1px solid ${l.color}`,background:`${l.color}14`,color:l.color,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"Inter,sans-serif"}}>
+                      {l.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Export section */}
         <div className="card" style={{borderColor:`rgba(16,185,129,.3)`}}>
@@ -1800,7 +2014,8 @@ export default function App(){
   useEffect(()=>{const t=setInterval(()=>setTime(new Date().toLocaleTimeString("en-GB")+" GMT"),1000);return()=>clearInterval(t);},[]);
 
   const post=useCallback(async(url,body)=>{
-    const r=await fetch("https://qgif-backend.onrender.com"+url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const BACKEND=window.location.hostname==="localhost"?"http://localhost:5000":"https://qgif-backend.onrender.com";
+    const r=await fetch(BACKEND+url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     return r.json();
   },[]);
 
@@ -1821,18 +2036,49 @@ export default function App(){
   const runAir=useCallback(async(reg)=>{setAirLoading(true);setAirData(null);try{const d=await post("/air-quality",{region:reg});setAirData(d);}catch(e){setAirData({_error:e.message});}finally{setAirLoading(false);}},[post]);
   const runCriminal=useCallback(async(reg)=>{setCriminalLoading(true);setCriminalData(null);try{const d=await post("/criminal-network",{region:reg});setCriminalData(d);}catch(e){setCriminalData({_error:e.message});}finally{setCriminalLoading(false);}},[post]);
   const runSatelliteCheck=useCallback(async(reg)=>{setSatLoading(true);setSatData(null);try{const d=await post("/satellite-check",{region:reg});setSatData(d);}catch(e){setSatData({_error:e.message});}finally{setSatLoading(false);}},[post]);
-  const runMonitor=useCallback(async()=>{setMonitorLoading(true);setMonitorData(null);try{const r=await fetch("https://qgif-backend.onrender.com/monitoring/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({secret:"qgif-monitor-2026"})});const d=await r.json();setMonitorData(d);}catch(e){setMonitorData({_error:e.message});}finally{setMonitorLoading(false);}},[]);
-  const loadDash=useCallback(async()=>{setDashLoading(true);try{const r=await fetch("https://qgif-backend.onrender.com/monitoring/dashboard");const d=await r.json();setDashData(d);}catch(e){setDashData({_error:e.message});}finally{setDashLoading(false);}},[]);
-  const runTimeline=useCallback(async(lat,lng,name)=>{setTimelineLoading(true);setTimelineData(null);try{const r=await fetch("https://qgif-backend.onrender.com/historical-timeline",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lat,lng,name})});const d=await r.json();setTimelineData(d);}catch(e){setTimelineData({_error:e.message});}finally{setTimelineLoading(false);}},[]);
+  const runMonitor=useCallback(async()=>{setMonitorLoading(true);setMonitorData(null);try{const BACKEND=window.location.hostname==="localhost"?"http://localhost:5000":"https://qgif-backend.onrender.com";const r=await fetch(BACKEND+"/monitoring/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({secret:"qgif-monitor-2026"})});const d=await r.json();setMonitorData(d);}catch(e){setMonitorData({_error:e.message});}finally{setMonitorLoading(false);}},[]);
+  const loadDash=useCallback(async()=>{setDashLoading(true);try{const BACKEND=window.location.hostname==="localhost"?"http://localhost:5000":"https://qgif-backend.onrender.com";const r=await fetch(BACKEND+"/monitoring/dashboard");const d=await r.json();setDashData(d);}catch(e){setDashData({_error:e.message});}finally{setDashLoading(false);}},[]);
+  const runTimeline=useCallback(async(lat,lng,name)=>{setTimelineLoading(true);setTimelineData(null);try{const BACKEND=window.location.hostname==="localhost"?"http://localhost:5000":"https://qgif-backend.onrender.com";const r=await fetch(BACKEND+"/historical-timeline",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lat,lng,name})});const d=await r.json();setTimelineData(d);}catch(e){setTimelineData({_error:e.message});}finally{setTimelineLoading(false);}},[]);
 
-  const handleRegionClick=useCallback((name)=>{setRegion(name);setActiveRegion(name);setClickedCoord(null);runPrediction(name,layer,role);runSatelliteCheck(name);},[layer,role,runPrediction,runSatelliteCheck]);
+  const handleRegionClick=useCallback((name)=>{
+    setRegion(name);setActiveRegion(name);setClickedCoord(null);
+    runPrediction(name,layer,role);
+    // Trigger live detection using region coordinates
+    const rd=REGION_COORDS[name];
+    if(rd){
+      const label=name;
+      setClickedCoord(label);
+      setLiveDetectLoading(true);setLiveDetect(null);setSatData(null);
+      const BACKEND=window.location.hostname==="localhost"?"http://localhost:5000":"https://qgif-backend.onrender.com";
+      fetch(BACKEND+"/detect-live",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lat:rd.lat,lng:rd.lng,name:label,radius:5})})
+        .then(r=>r.json())
+        .then(d=>{
+          console.log('QGIF detect-live response:',JSON.stringify(d.ml_prediction));
+          setLiveDetect(d);
+          if(d.satellite_indices){setSatData({
+            earth_engine_status:'CONNECTED — REAL SATELLITE DATA',
+            satellite_date:d.imagery?.current_image_date,
+            ndvi_mean:d.satellite_indices.ndvi_mean,
+            ndvi_p10:d.satellite_indices.ndvi_p10,
+            degradation_gap:Math.round((d.satellite_indices.ndvi_mean-d.satellite_indices.ndvi_p10)*1000)/1000,
+            water_fraction_pct:d.satellite_indices.water_coverage_pct,
+            degradation_signal:d.mining_detection.score>50?'YES — land degradation detected':'No strong contrast signal',
+          });}
+        })
+        .catch(e=>setLiveDetect({_error:e.message}))
+        .finally(()=>setLiveDetectLoading(false));
+    }
+  },[layer,role,runPrediction]);
   const handleCoordClick=useCallback(async(lat,lng,name)=>{
     const label=name||`${lat.toFixed(4)}°N, ${Math.abs(lng).toFixed(4)}°W`;
     setClickedCoord(label);setActiveRegion(null);
     setLiveDetectLoading(true);setLiveDetect(null);setSatData(null);
+    const BACKEND=window.location.hostname==="localhost"?"http://localhost:5000":"https://qgif-backend.onrender.com";
     try{
-      const r=await fetch("https://qgif-backend.onrender.com/detect-live",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lat,lng,name:label,radius:5})});
-      const d=await r.json();setLiveDetect(d);
+      const r=await fetch(BACKEND+"/detect-live",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lat,lng,name:label,radius:5})});
+      const d=await r.json();
+      console.log('QGIF detect-live response:', JSON.stringify(d.ml_prediction));
+      setLiveDetect(d);
       // Also set satData from the detection result for the existing satellite panel
       if(d.satellite_indices){setSatData({
         earth_engine_status:'CONNECTED — REAL SATELLITE DATA',
@@ -1985,6 +2231,17 @@ export default function App(){
           </div>
           <div style={{padding:"10px 8px"}}>
             <Label text="RISK BY REGION"/>
+            {/* Quick region selector dropdown */}
+            <div style={{marginBottom:8}}>
+              <select
+                onChange={e=>{if(e.target.value)handleRegionClick(e.target.value);}}
+                style={{width:"100%",padding:"7px 8px",background:BG,border:`1px solid ${CYAN}`,borderRadius:6,color:CYAN,fontSize:11,fontFamily:FB,cursor:"pointer",outline:"none"}}>
+                <option value="">⚡ Quick Select Region...</option>
+                {REGIONS.map(r=>(
+                  <option key={r.name} value={r.name}>{r.name} — {r.risk}</option>
+                ))}
+              </select>
+            </div>
             {REGIONS.map(r=>(
               <div key={r.name} onClick={()=>handleRegionClick(r.name)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${BORDER2}`,cursor:"pointer"}}>
                 <span style={{fontFamily:FB,fontSize:11,color:activeRegion===r.name?CYAN:TEXT}}>{r.name}</span>
@@ -2072,6 +2329,32 @@ export default function App(){
                         <div style={{fontFamily:FM,fontSize:9,color:AMBER,marginTop:4}}>
                           New clearing since {liveDetect.imagery?.baseline_image_date}: <b>{liveDetect.mining_detection.new_clearing_ha} ha</b> · Forest loss: <b>{liveDetect.mining_detection.forest_loss_pct}%</b>
                         </div>
+                      )}
+                    </div>
+
+                    {/* ML Prediction — Trained Random Forest Model */}
+                    <div style={{background:P2,borderRadius:7,padding:"8px 10px",marginBottom:8,border:`1px solid ${liveDetect.ml_prediction?.prediction==='MINING'?RED:GREEN}33`}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                        <div style={{fontFamily:FM,fontSize:8,color:"#A78BFA",letterSpacing:".06em"}}>ML PREDICTION — RANDOM FOREST</div>
+                        <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>{liveDetect.ml_prediction?.n_trees||0} trees</div>
+                      </div>
+                      {liveDetect.ml_prediction?.mining_probability_pct!==undefined?(
+                        <>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                            <div style={{fontFamily:FB,fontSize:18,fontWeight:700,color:liveDetect.ml_prediction.prediction==='MINING'?RED:GREEN}}>
+                              {liveDetect.ml_prediction.mining_probability_pct}<span style={{fontSize:10,color:MUTED}}>%</span>
+                            </div>
+                            <Tag label={liveDetect.ml_prediction.prediction} color={liveDetect.ml_prediction.prediction==='MINING'?RED:GREEN}/>
+                          </div>
+                          <div style={{height:5,background:"rgba(255,255,255,.05)",borderRadius:3,overflow:"hidden",marginBottom:6}}>
+                            <div style={{height:"100%",width:`${liveDetect.ml_prediction.mining_probability_pct||0}%`,background:liveDetect.ml_prediction.prediction==='MINING'?RED:GREEN,borderRadius:3}}/>
+                          </div>
+                          <div style={{fontFamily:FM,fontSize:9,color:MUTED,lineHeight:1.5}}>
+                            Confidence: <b style={{color:TEXT2}}>{liveDetect.ml_prediction.confidence_pct}%</b> · Trained on Ghana Sentinel-2 spectral observations
+                          </div>
+                        </>
+                      ):(
+                        <div style={{fontFamily:FM,fontSize:10,color:AMBER}}>ML model not loaded on backend. Status: {JSON.stringify(liveDetect.ml_prediction||"undefined")}</div>
                       )}
                     </div>
 
