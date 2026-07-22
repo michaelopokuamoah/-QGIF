@@ -4,22 +4,19 @@ import { MapContainer, TileLayer, Marker, Tooltip, useMapEvents } from 'react-le
 import L from 'leaflet';
 
 // ── DESIGN TOKENS ──────────────────────────────────────────
-// Palette: deep navy instrument panel — authoritative, scientific
-const BG="#040D1A",PANEL="#071526",P2="#0A1E33";
-const CYAN="#0EA5E9",GREEN="#10B981",AMBER="#F59E0B",RED="#EF4444",PURPLE="#8B5CF6";
-const TEXT="#E2EEF9",TEXT2="rgba(226,238,249,0.5)",MUTED="#3D5A73";
-const BORDER="rgba(14,165,233,0.12)",BORDER2="rgba(14,165,233,0.06)";
+const BG="#0D1117",PANEL="#161B22",P2="#1C2333";
+const CYAN="#58A6FF",GREEN="#3FB950",AMBER="#D29922",RED="#F85149",PURPLE="#BC8CFF";
+const TEXT="#C9D1D9",TEXT2="#8B949E",MUTED="#6E7681";
+const BORDER="#30363D",BORDER2="#21262D";
 
 // ── TYPOGRAPHY ─────────────────────────────────────────────
-// Inter: professional dashboard body — clear hierarchy, neutral authority
-// DM Mono: data labels and codes — precise without feeling retro
-const FH="Inter,'Segoe UI',system-ui,sans-serif";  // headings
-const FB="Inter,'Segoe UI',system-ui,sans-serif";  // body
-const FM="'DM Mono','Fira Mono','Courier New',monospace"; // data/labels
+const FH="Arial,Helvetica,sans-serif";
+const FB="Arial,Helvetica,sans-serif";
+const FM="'Courier New',Courier,monospace";
 
-const SEV_C={CRITICAL:RED,HIGH:AMBER,MEDIUM:"#EAB308",LOW:GREEN};
-const SEV_BG={CRITICAL:"rgba(239,68,68,.1)",HIGH:"rgba(245,158,11,.1)",MEDIUM:"rgba(234,179,8,.08)",LOW:"rgba(16,185,129,.08)"};
-const IMP_C={TRANSFORMATIONAL:CYAN,CRITICAL:RED,"MAJOR IMPROVEMENT":GREEN,POSITIVE:PURPLE,HIGH:AMBER,MEDIUM:"#EAB308"};
+const SEV_C={CRITICAL:RED,HIGH:AMBER,MEDIUM:"#D29922",LOW:GREEN};
+const SEV_BG={CRITICAL:"rgba(248,81,73,.1)",HIGH:"rgba(210,153,34,.1)",MEDIUM:"rgba(210,153,34,.08)",LOW:"rgba(63,185,80,.08)"};
+const IMP_C={TRANSFORMATIONAL:CYAN,CRITICAL:RED,"MAJOR IMPROVEMENT":GREEN,POSITIVE:PURPLE,HIGH:AMBER,MEDIUM:"#D29922"};
 
 const ROLES=[
   {key:"government",label:"Government Official",icon:"GOV",color:CYAN,desc:"Policy briefings, budget decisions",prompts:["Which regions face the highest risk?","What is the cost of illegal mining?","Which issues need emergency action?","What reporting obligations is Ghana failing?"]},
