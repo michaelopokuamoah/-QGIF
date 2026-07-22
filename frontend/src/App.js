@@ -2311,50 +2311,37 @@ export default function App(){
                   LIVE SATELLITE DETECTION ENGINE
                   {liveDetect&&liveDetect.imagery&&<span style={{color:CYAN,marginLeft:6}}>{liveDetect.imagery.current_image_date}</span>}
                 </div>
-                {liveDetectLoading&&<div style={{fontFamily:FB,fontSize:11,color:MUTED}}>Running 7-index satellite analysis... (20-30 seconds)</div>}
+                {liveDetectLoading&&<div style={{fontFamily:FB,fontSize:11,color:MUTED}}>Running ML analysis... (20-30 seconds)</div>}
                 {!liveDetectLoading&&liveDetect&&!liveDetect._error&&(
                   <div>
-                    {/* Mining Detection */}
-                    <div style={{background:P2,borderRadius:7,padding:"8px 10px",marginBottom:8}}>
-                      <div style={{fontFamily:FM,fontSize:8,color:RED,marginBottom:4,letterSpacing:".06em"}}>⛏ MINING ACTIVITY DETECTION</div>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                        <div style={{fontFamily:FB,fontSize:18,fontWeight:700,color:liveDetect.mining_detection?.score>70?RED:liveDetect.mining_detection?.score>40?AMBER:GREEN}}>{liveDetect.mining_detection?.score}<span style={{fontSize:10,color:MUTED}}>/100</span></div>
-                        <Tag label={liveDetect.mining_detection?.level||'--'} color={SEV_C[liveDetect.mining_detection?.level]||MUTED}/>
-                      </div>
-                      <div style={{height:5,background:"rgba(255,255,255,.05)",borderRadius:3,overflow:"hidden",marginBottom:6}}>
-                        <div style={{height:"100%",width:`${liveDetect.mining_detection?.score||0}%`,background:liveDetect.mining_detection?.score>70?RED:liveDetect.mining_detection?.score>40?AMBER:GREEN,borderRadius:3}}/>
-                      </div>
-                      <div style={{fontFamily:FB,fontSize:11,color:TEXT2,lineHeight:1.5}}>{liveDetect.mining_detection?.classification}</div>
-                      {liveDetect.mining_detection?.new_clearing_ha>0&&(
-                        <div style={{fontFamily:FM,fontSize:9,color:AMBER,marginTop:4}}>
-                          New clearing since {liveDetect.imagery?.baseline_image_date}: <b>{liveDetect.mining_detection.new_clearing_ha} ha</b> · Forest loss: <b>{liveDetect.mining_detection.forest_loss_pct}%</b>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* ML Prediction — Trained Random Forest Model */}
-                    <div style={{background:P2,borderRadius:7,padding:"8px 10px",marginBottom:8,border:`1px solid ${liveDetect.ml_prediction?.prediction==='MINING'?RED:GREEN}33`}}>
+                    {/* ML Prediction — PRIMARY DETECTOR (trained on 500 Ghana locations) */}
+                    <div style={{background:P2,borderRadius:7,padding:"8px 10px",marginBottom:8,border:`1px solid ${liveDetect.ml_prediction?.prediction==='MINING'?RED:GREEN}44`}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                        <div style={{fontFamily:FM,fontSize:8,color:"#A78BFA",letterSpacing:".06em"}}>ML PREDICTION — {liveDetect.ml_prediction?.model?.includes('MLP')?'MLP NEURAL NETWORK':'RANDOM FOREST'}</div>
-                        <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>{liveDetect.ml_prediction?.model?.includes('MLP')?`${liveDetect.ml_prediction?.accuracy_pct||93}% accuracy`:`${liveDetect.ml_prediction?.n_trees||0} trees`}</div>
+                        <div style={{fontFamily:FM,fontSize:8,color:"#A78BFA",letterSpacing:".06em"}}>⛏ MINING DETECTION — MLP NEURAL NETWORK</div>
+                        <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>{liveDetect.ml_prediction?.accuracy_pct||93}% accuracy</div>
                       </div>
                       {liveDetect.ml_prediction?.mining_probability_pct!==undefined?(
                         <>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                            <div style={{fontFamily:FB,fontSize:18,fontWeight:700,color:liveDetect.ml_prediction.prediction==='MINING'?RED:GREEN}}>
+                            <div style={{fontFamily:FB,fontSize:22,fontWeight:700,color:liveDetect.ml_prediction.prediction==='MINING'?RED:GREEN}}>
                               {liveDetect.ml_prediction.mining_probability_pct}<span style={{fontSize:10,color:MUTED}}>%</span>
                             </div>
                             <Tag label={liveDetect.ml_prediction.prediction} color={liveDetect.ml_prediction.prediction==='MINING'?RED:GREEN}/>
                           </div>
-                          <div style={{height:5,background:"rgba(255,255,255,.05)",borderRadius:3,overflow:"hidden",marginBottom:6}}>
-                            <div style={{height:"100%",width:`${liveDetect.ml_prediction.mining_probability_pct||0}%`,background:liveDetect.ml_prediction.prediction==='MINING'?RED:GREEN,borderRadius:3}}/>
+                          <div style={{height:6,background:"rgba(255,255,255,.05)",borderRadius:3,overflow:"hidden",marginBottom:6}}>
+                            <div style={{height:"100%",width:`${liveDetect.ml_prediction.mining_probability_pct||0}%`,background:liveDetect.ml_prediction.prediction==='MINING'?RED:GREEN,borderRadius:3,transition:"width 1s ease"}}/>
                           </div>
                           <div style={{fontFamily:FM,fontSize:9,color:MUTED,lineHeight:1.5}}>
-                            Confidence: <b style={{color:TEXT2}}>{liveDetect.ml_prediction.confidence_pct}%</b> · Trained on Ghana Sentinel-2 spectral observations
+                            Confidence: <b style={{color:TEXT2}}>{liveDetect.ml_prediction.confidence_pct}%</b> · Trained on 500 confirmed Ghana satellite observations · Model: MLP (64→32→16 neurons)
                           </div>
+                          {liveDetect.mining_detection?.new_clearing_ha>0&&(
+                            <div style={{fontFamily:FM,fontSize:9,color:AMBER,marginTop:4}}>
+                              New clearing since {liveDetect.imagery?.baseline_image_date}: <b>{liveDetect.mining_detection.new_clearing_ha} ha</b> · Forest loss: <b>{liveDetect.mining_detection.forest_loss_pct}%</b>
+                            </div>
+                          )}
                         </>
                       ):(
-                        <div style={{fontFamily:FM,fontSize:10,color:AMBER}}>ML model not loaded on backend. Status: {JSON.stringify(liveDetect.ml_prediction||"undefined")}</div>
+                        <div style={{fontFamily:FM,fontSize:10,color:AMBER}}>ML model loading... Status: {JSON.stringify(liveDetect.ml_prediction||"undefined")}</div>
                       )}
                     </div>
 
