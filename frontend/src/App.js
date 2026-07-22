@@ -2335,8 +2335,8 @@ export default function App(){
                     {/* ML Prediction — Trained Random Forest Model */}
                     <div style={{background:P2,borderRadius:7,padding:"8px 10px",marginBottom:8,border:`1px solid ${liveDetect.ml_prediction?.prediction==='MINING'?RED:GREEN}33`}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                        <div style={{fontFamily:FM,fontSize:8,color:"#A78BFA",letterSpacing:".06em"}}>ML PREDICTION — RANDOM FOREST</div>
-                        <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>{liveDetect.ml_prediction?.n_trees||0} trees</div>
+                        <div style={{fontFamily:FM,fontSize:8,color:"#A78BFA",letterSpacing:".06em"}}>ML PREDICTION — {liveDetect.ml_prediction?.model?.includes('MLP')?'MLP NEURAL NETWORK':'RANDOM FOREST'}</div>
+                        <div style={{fontFamily:FM,fontSize:8,color:MUTED}}>{liveDetect.ml_prediction?.model?.includes('MLP')?`${liveDetect.ml_prediction?.accuracy_pct||93}% accuracy`:`${liveDetect.ml_prediction?.n_trees||0} trees`}</div>
                       </div>
                       {liveDetect.ml_prediction?.mining_probability_pct!==undefined?(
                         <>
