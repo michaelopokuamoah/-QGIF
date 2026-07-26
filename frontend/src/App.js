@@ -4,19 +4,19 @@ import { MapContainer, TileLayer, Marker, Tooltip, useMapEvents } from 'react-le
 import L from 'leaflet';
 
 // ── DESIGN TOKENS ──────────────────────────────────────────
-const BG="#0D1117",PANEL="#161B22",P2="#1C2333";
-const CYAN="#58A6FF",GREEN="#3FB950",AMBER="#D29922",RED="#F85149",PURPLE="#BC8CFF";
-const TEXT="#C9D1D9",TEXT2="#8B949E",MUTED="#6E7681";
-const BORDER="#30363D",BORDER2="#21262D";
+const BG="#0F172A",PANEL="#1E293B",P2="#263148";
+const CYAN="#3B82F6",GREEN="#22C55E",AMBER="#F59E0B",RED="#EF4444",PURPLE="#A855F7";
+const TEXT="#F1F5F9",TEXT2="#CBD5E1",MUTED="#94A3B8";
+const BORDER="#334155",BORDER2="#1E293B";
 
 // ── TYPOGRAPHY ─────────────────────────────────────────────
-const FH="Arial,Helvetica,sans-serif";
-const FB="Arial,Helvetica,sans-serif";
+const FH="'Poppins','Segoe UI',Arial,sans-serif";
+const FB="'Roboto','Segoe UI',Arial,sans-serif";
 const FM="'Courier New',Courier,monospace";
 
-const SEV_C={CRITICAL:RED,HIGH:AMBER,MEDIUM:"#D29922",LOW:GREEN};
-const SEV_BG={CRITICAL:"rgba(248,81,73,.1)",HIGH:"rgba(210,153,34,.1)",MEDIUM:"rgba(210,153,34,.08)",LOW:"rgba(63,185,80,.08)"};
-const IMP_C={TRANSFORMATIONAL:CYAN,CRITICAL:RED,"MAJOR IMPROVEMENT":GREEN,POSITIVE:PURPLE,HIGH:AMBER,MEDIUM:"#D29922"};
+const SEV_C={CRITICAL:RED,HIGH:"#F97316",MEDIUM:AMBER,LOW:GREEN};
+const SEV_BG={CRITICAL:"rgba(239,68,68,.1)",HIGH:"rgba(249,115,22,.1)",MEDIUM:"rgba(245,158,11,.08)",LOW:"rgba(34,197,94,.08)"};
+const IMP_C={TRANSFORMATIONAL:CYAN,CRITICAL:RED,"MAJOR IMPROVEMENT":GREEN,POSITIVE:PURPLE,HIGH:AMBER,MEDIUM:"#F59E0B"};
 
 const ROLES=[
   {key:"government",label:"Government Official",icon:"GOV",color:CYAN,desc:"Policy briefings, budget decisions",prompts:["Which regions face the highest risk?","What is the cost of illegal mining?","Which issues need emergency action?","What reporting obligations is Ghana failing?"]},
