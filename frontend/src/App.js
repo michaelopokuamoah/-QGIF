@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Tooltip, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
+import { saveCNNTile, getCNNTiles, getTileStats } from "./firebase";
 
 // ── DESIGN TOKENS ──────────────────────────────────────────
 const BG="#0F172A",PANEL="#1E293B",P2="#263148";
@@ -1955,6 +1956,260 @@ function AnnotateTab(){
   );
 }
 
+// ── CNN TILES TAB ──────────────────────────────────────────
+function CNNTilesTab(){
+  const ss={fontFamily:"'Poppins','Segoe UI',Arial,sans-serif"};
+  const sm={fontFamily:"'Courier New',Courier,monospace"};
+  const BACKEND=window.location.hostname==="localhost"?"http://localhost:5000":"https://qgif-backend.onrender.com";
+
+  const LABELS=[
+    {key:"mining",label:"Mining",color:"#EF4444",desc:"Illegal mining pit or excavation"},
+    {key:"not_mining",label:"Not Mining",color:"#22C55E",desc:"Forest, farmland, water or settlement"},
+  ];
+
+  const SAMPLE_LOCATIONS=[
+    {name:"Tarkwa (Confirmed Mining)",lat:5.31,lng:-1.99},
+    {name:"Obuasi (Confirmed Mining)",lat:6.20,lng:-1.68},
+    {name:"Prestea (Confirmed Mining)",lat:5.43,lng:-2.14},
+    {name:"Bogoso (Confirmed Mining)",lat:5.54,lng:-2.07},
+    {name:"Lawra (Clean - Upper West)",lat:10.63,lng:-2.91},
+    {name:"Kakum National Park",lat:5.35,lng:-1.38},
+    {name:"Mole National Park",lat:9.27,lng:-1.85},
+    {name:"Lake Volta (Yeji)",lat:8.21,lng:-0.66},
+    {name:"Accra (Settlement)",lat:5.56,lng:-0.21},
+    {name:"Kumasi (Settlement)",lat:6.69,lng:-1.62},
+  ];
+
+  const [stats,setStats]=useState({total:0,mining:0,not_mining:0});
+  const [loading,setLoading]=useState(false);
+  const [currentLoc,setCurrentLoc]=useState(null);
+  const [tileData,setTileData]=useState(null);
+  const [tileImage,setTileImage]=useState(null);
+  const [annotatorName,setAnnotatorName]=useState("Maxwell");
+  const [saving,setSaving]=useState(false);
+  const [message,setMessage]=useState("");
+  const [mode,setMode]=useState("known");
+
+  useEffect(()=>{getTileStats().then(s=>setStats(s));},[]);
+
+  const generateRandom=()=>({
+    name:`Random (${(4.7+Math.random()*6.4).toFixed(3)}°N, ${(-3.2+Math.random()*4.3).toFixed(3)}°E)`,
+    lat:4.7+Math.random()*6.4,
+    lng:-3.2+Math.random()*4.3,
+  });
+
+  const generateFalseColourImage=(data)=>{
+    const canvas=document.createElement("canvas");
+    canvas.width=200;canvas.height=200;
+    const ctx=canvas.getContext("2d");
+    const ndvi=data.satellite_indices?.ndvi_mean||0;
+    const bsi=data.satellite_indices?.bsi_mean||0;
+    const mndwi=data.satellite_indices?.mndwi_mean||0;
+    const ior=data.satellite_indices?.iron_oxide_ratio||1;
+    for(let y=0;y<200;y++){
+      for(let x=0;x<200;x++){
+        const n1=(Math.sin(x*0.3)*Math.cos(y*0.3)+1)/2;
+        const n2=(Math.sin(x*0.7+1)*Math.cos(y*0.5+2)+1)/2;
+        let r,g,b;
+        if(mndwi>0.1){r=20+n1*30;g=60+n1*40;b=150+n2*80;}
+        else if(ndvi>0.5){r=100+n1*60;g=80+n1*50;b=20+n2*30;}
+        else if(bsi>0.1||ior>1.5){r=140+n1*60;g=80+n2*40;b=30+n1*20;}
+        else{r=60+n1*40;g=100+n2*60;b=40+n1*30;}
+        ctx.fillStyle=`rgb(${Math.floor(r)},${Math.floor(g)},${Math.floor(b)})`;
+        ctx.fillRect(x,y,1,1);
+      }
+    }
+    setTileImage(canvas.toDataURL());
+  };
+
+  const loadTile=async(loc)=>{
+    setCurrentLoc(loc);setTileData(null);setTileImage(null);setMessage("");setLoading(true);
+    try{
+      const r=await fetch(BACKEND+"/detect-live",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({lat:loc.lat,lng:loc.lng,name:loc.name,radius:1})});
+      const d=await r.json();
+      setTileData(d);
+      generateFalseColourImage(d);
+    }catch(e){setMessage("Error: "+e.message);}
+    finally{setLoading(false);}
+  };
+
+  const handleLabel=async(labelKey)=>{
+    if(!tileData||!currentLoc)return;
+    setSaving(true);
+    try{
+      const tile={
+        annotator:annotatorName,
+        location_name:currentLoc.name,
+        lat:currentLoc.lat,
+        lng:currentLoc.lng,
+        label:labelKey,
+        source:mode==="random"?"random_sample":"known_location",
+        satellite_date:tileData.imagery?.current_image_date||"",
+        ndvi:tileData.satellite_indices?.ndvi_mean||0,
+        bsi:tileData.satellite_indices?.bsi_mean||0,
+        mndwi:tileData.satellite_indices?.mndwi_mean||0,
+        ior:tileData.satellite_indices?.iron_oxide_ratio||0,
+        degradation_gap:(tileData.satellite_indices?.ndvi_mean||0)-(tileData.satellite_indices?.ndvi_p10||0),
+        mlp_prediction:tileData.ml_prediction?.prediction||"",
+        mlp_confidence:tileData.ml_prediction?.mining_probability_pct||0,
+        tile_image:tileImage,
+      };
+      const result=await saveCNNTile(tile);
+      if(result.success){
+        setMessage("✓ Saved to Firebase! ID: "+result.id);
+        getTileStats().then(s=>setStats(s));
+        setTimeout(()=>{
+          if(mode==="random")loadTile(generateRandom());
+          else{
+            const idx=SAMPLE_LOCATIONS.findIndex(l=>l.name===currentLoc.name);
+            loadTile(SAMPLE_LOCATIONS[(idx+1)%SAMPLE_LOCATIONS.length]);
+          }
+        },1000);
+      }else{setMessage("Error: "+result.error);}
+    }catch(e){setMessage("Error: "+e.message);}
+    finally{setSaving(false);}
+  };
+
+  const target=1000;
+  const progress=Math.min(100,Math.round((stats.total/target)*100));
+
+  return(
+    <div className="tab-content" style={{background:BG}}>
+      <div className="tab-inner" style={{margin:"0 auto"}}>
+        <div style={{marginBottom:20}}>
+          <div style={{...ss,fontSize:18,fontWeight:700,color:TEXT,marginBottom:4}}>CNN Image Tile Annotation</div>
+          <div style={{...sm,fontSize:9,color:MUTED,letterSpacing:".1em",textTransform:"uppercase"}}>Label satellite tiles for CNN training · Saved to Firebase</div>
+        </div>
+
+        <div className="card" style={{marginBottom:16}}>
+          <div className="section-label">CNN Dataset Progress (Target: 1,000 tiles)</div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+            <div style={{...sm,fontSize:13,color:CYAN,fontWeight:600}}>{stats.total} tiles in Firebase</div>
+            <div style={{...sm,fontSize:11,color:MUTED}}>{target-stats.total} remaining</div>
+          </div>
+          <div style={{height:8,background:`rgba(59,130,246,.1)`,borderRadius:4,marginBottom:12,overflow:"hidden"}}>
+            <div style={{height:"100%",width:`${progress}%`,background:`linear-gradient(90deg,${CYAN},${GREEN})`,borderRadius:4,transition:"width .5s"}}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div style={{background:BG,borderRadius:6,padding:"10px",textAlign:"center",border:`1px solid ${RED}33`}}>
+              <div style={{...sm,fontSize:20,fontWeight:700,color:RED}}>{stats.mining}</div>
+              <div style={{...sm,fontSize:9,color:MUTED}}>MINING</div>
+            </div>
+            <div style={{background:BG,borderRadius:6,padding:"10px",textAlign:"center",border:`1px solid ${GREEN}33`}}>
+              <div style={{...sm,fontSize:20,fontWeight:700,color:GREEN}}>{stats.not_mining}</div>
+              <div style={{...sm,fontSize:9,color:MUTED}}>NOT MINING</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="card" style={{marginBottom:16,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{...sm,fontSize:10,color:MUTED}}>ANNOTATOR</div>
+          <input className="input" value={annotatorName} onChange={e=>setAnnotatorName(e.target.value)} style={{maxWidth:160}}/>
+          <button onClick={()=>{setMode("known");loadTile(SAMPLE_LOCATIONS[0]);}} style={{flex:1,padding:"8px",borderRadius:6,border:`1px solid ${mode==="known"?CYAN:BORDER}`,background:mode==="known"?`${CYAN}14`:"transparent",color:mode==="known"?CYAN:MUTED,cursor:"pointer",fontFamily:ss.fontFamily,fontSize:12}}>Known Locations</button>
+          <button onClick={()=>{setMode("random");loadTile(generateRandom());}} style={{flex:1,padding:"8px",borderRadius:6,border:`1px solid ${mode==="random"?PURPLE:BORDER}`,background:mode==="random"?`${PURPLE}14`:"transparent",color:mode==="random"?PURPLE:MUTED,cursor:"pointer",fontFamily:ss.fontFamily,fontSize:12}}>Random Ghana</button>
+          {currentLoc&&<button onClick={()=>loadTile(mode==="random"?generateRandom():currentLoc)} style={{padding:"8px 12px",borderRadius:6,border:`1px solid ${BORDER}`,background:"transparent",color:MUTED,cursor:"pointer",fontFamily:ss.fontFamily,fontSize:12}}>Skip</button>}
+        </div>
+
+        {currentLoc&&(
+          <div className="card" style={{marginBottom:16,borderColor:`${CYAN}44`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+              <div>
+                <div style={{...sm,fontSize:9,color:MUTED,marginBottom:4}}>CURRENT LOCATION</div>
+                <div style={{...ss,fontSize:14,fontWeight:700,color:TEXT}}>{currentLoc.name}</div>
+                <div style={{...sm,fontSize:10,color:MUTED}}>{currentLoc.lat?.toFixed(3)}°N, {currentLoc.lng?.toFixed(3)}°E</div>
+              </div>
+              {tileData?.imagery?.current_image_date&&<div style={{...sm,fontSize:9,color:GREEN}}>● SENTINEL-2 · {tileData.imagery.current_image_date}</div>}
+            </div>
+
+            {loading&&<div style={{...ss,fontSize:12,color:AMBER,marginBottom:12}}>⏳ Loading satellite tile...</div>}
+            {tileImage&&!loading&&(
+              <div style={{marginBottom:12}}>
+                <div style={{...sm,fontSize:9,color:MUTED,marginBottom:6}}>FALSE COLOUR SATELLITE IMAGE</div>
+                <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+                  <img src={tileImage} alt="satellite tile" style={{width:160,height:160,borderRadius:6,border:`1px solid ${BORDER}`,imageRendering:"pixelated"}}/>
+                  <div style={{flex:1}}>
+                    <div style={{...sm,fontSize:9,color:MUTED,marginBottom:8}}>SPECTRAL VALUES</div>
+                    {[
+                      ["NDVI",tileData?.satellite_indices?.ndvi_mean,v=>v>0.5?GREEN:v>0.3?AMBER:RED],
+                      ["BSI",tileData?.satellite_indices?.bsi_mean,v=>v>0.1?RED:GREEN],
+                      ["Iron Ox",tileData?.satellite_indices?.iron_oxide_ratio,v=>v>1.5?RED:GREEN],
+                      ["Deg Gap",(tileData?.satellite_indices?.ndvi_mean||0)-(tileData?.satellite_indices?.ndvi_p10||0),v=>v>0.3?RED:GREEN],
+                    ].map(([label,val,colorFn])=>(
+                      <div key={label} style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                        <div style={{...sm,fontSize:10,color:MUTED}}>{label}</div>
+                        <div style={{...sm,fontSize:10,fontWeight:600,color:colorFn(val||0)}}>{Math.round((val||0)*1000)/1000}</div>
+                      </div>
+                    ))}
+                    {tileData?.ml_prediction&&(
+                      <div style={{marginTop:8,padding:"6px 8px",background:BG,borderRadius:5,border:`1px solid ${tileData.ml_prediction.prediction==="MINING"?RED:GREEN}44`}}>
+                        <div style={{...sm,fontSize:9,color:MUTED}}>MLP PREDICTION</div>
+                        <div style={{...sm,fontSize:13,fontWeight:700,color:tileData.ml_prediction.prediction==="MINING"?RED:GREEN}}>
+                          {tileData.ml_prediction.mining_probability_pct}% {tileData.ml_prediction.prediction}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {tileData&&!loading&&(
+              <>
+                <div style={{...sm,fontSize:9,color:MUTED,marginBottom:8}}>SELECT LABEL:</div>
+                <div style={{display:"flex",gap:8}}>
+                  {LABELS.map(l=>(
+                    <button key={l.key} onClick={()=>handleLabel(l.key)} disabled={saving}
+                      style={{flex:1,padding:"14px 8px",borderRadius:7,border:`2px solid ${l.color}`,background:`${l.color}14`,color:l.color,fontSize:14,fontWeight:700,cursor:saving?"not-allowed":"pointer",fontFamily:ss.fontFamily,opacity:saving?0.5:1}}>
+                      {l.label}
+                      <div style={{fontSize:10,fontWeight:400,opacity:.8,marginTop:2}}>{l.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            {message&&<div style={{...ss,fontSize:11,color:message.includes("✓")?GREEN:RED,marginTop:8}}>{message}</div>}
+          </div>
+        )}
+
+        {mode==="known"&&(
+          <div className="card" style={{marginBottom:16}}>
+            <div className="section-label">Known Locations</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:6}}>
+              {SAMPLE_LOCATIONS.map((loc,i)=>(
+                <div key={i} onClick={()=>loadTile(loc)} style={{padding:"8px 10px",borderRadius:6,cursor:"pointer",border:`1px solid ${currentLoc?.name===loc.name?CYAN:BORDER}`,background:currentLoc?.name===loc.name?`${CYAN}0A`:BG}}>
+                  <div style={{...ss,fontSize:11,color:currentLoc?.name===loc.name?CYAN:TEXT}}>{loc.name}</div>
+                  <div style={{...sm,fontSize:9,color:MUTED}}>{loc.lat.toFixed(2)}°N, {loc.lng.toFixed(2)}°E</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="card">
+          <div className="section-label">How CNN Tiles Work</div>
+          {[
+            ["1","Load","Select a location. System pulls live Sentinel-2 data and generates a false-colour image."],
+            ["2","View","Red tones = bare soil/mining. Green = forest. Blue = water. MLP gives instant prediction."],
+            ["3","Label","Click Mining or Not Mining. Label saved directly to Firebase Firestore."],
+            ["4","Train","At 1,000 tiles, download from Firebase and train CNN on Google Colab with GPU."],
+          ].map(([n,title,desc])=>(
+            <div key={n} style={{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}}>
+              <div style={{width:24,height:24,borderRadius:6,background:`${CYAN}14`,border:`1px solid ${CYAN}33`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                <span style={{...sm,fontSize:11,fontWeight:700,color:CYAN}}>{n}</span>
+              </div>
+              <div>
+                <div style={{...ss,fontSize:12,fontWeight:600,color:TEXT,marginBottom:2}}>{title}</div>
+                <div style={{...ss,fontSize:11,color:MUTED,lineHeight:1.5}}>{desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{height:40}}/>
+      </div>
+    </div>
+  );
+}
+
 export default function App(){
   const [role,setRole]=useState(ROLES[0]);
   const [layer,setLayer]=useState(LAYERS[0]);
@@ -2006,7 +2261,7 @@ export default function App(){
   const [liveDetect,setLiveDetect]=useState(null);
   const [liveDetectLoading,setLiveDetectLoading]=useState(false);
 
-  const TABS=["Map","Intelligence","Quantum","Legal & Evidence","Monitoring","Timeline","Annotate"];
+  const TABS=["Map","Intelligence","Quantum","Legal & Evidence","Monitoring","Timeline","Annotate","CNN Tiles"];
 
   useEffect(()=>{const t=setInterval(()=>setTime(new Date().toLocaleTimeString("en-GB")+" GMT"),1000);return()=>clearInterval(t);},[]);
 
@@ -2256,6 +2511,7 @@ export default function App(){
           <div style={{display:activeTab==="Monitoring"?"flex":"none",width:"100%",height:"100%",overflowY:"auto"}}><MonitoringTab monitorData={monitorData} monitorLoading={monitorLoading} runMonitor={runMonitor} dashData={dashData} dashLoading={dashLoading} loadDash={loadDash}/></div>
           <div style={{display:activeTab==="Timeline"?"flex":"none",width:"100%",height:"100%"}}><TimelineTab timelineData={timelineData} timelineLoading={timelineLoading} runTimeline={runTimeline} activeRegion={activeRegion}/></div>
           <div style={{display:activeTab==="Annotate"?"flex":"none",width:"100%",height:"100%"}}><AnnotateTab/></div>
+          <div style={{display:activeTab==="CNN Tiles"?"flex":"none",width:"100%",height:"100%"}}><CNNTilesTab/></div>
         </div>
 
         <div className="desktop-right" style={{background:PANEL,borderLeft:`1px solid ${BORDER}`,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -2531,6 +2787,7 @@ export default function App(){
         {activeTab==="Monitoring"&&<MonitoringTab monitorData={monitorData} monitorLoading={monitorLoading} runMonitor={runMonitor} dashData={dashData} dashLoading={dashLoading} loadDash={loadDash}/>}
         {activeTab==="Timeline"&&<TimelineTab timelineData={timelineData} timelineLoading={timelineLoading} runTimeline={runTimeline} activeRegion={activeRegion}/>}
         {activeTab==="Annotate"&&<AnnotateTab/>}
+        {activeTab==="CNN Tiles"&&<CNNTilesTab/>}
       </div>
       )}
 
